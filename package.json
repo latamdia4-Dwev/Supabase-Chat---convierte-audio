@@ -1,7 +1,7 @@
 {
   "name": "youtube-to-mp3-supabase-chat",
-  "version": "1.6.0",
-  "description": "Conversor de YouTube a MP3 con Spotify multi-perfil (autenticación personal por usuario y vinculación por Código QR), pre-escucha interactiva y despliegue en Render.com",
+  "version": "1.6.1",
+  "description": "Conversor de YouTube a MP3 con Spotify multi-perfil (autenticación personal por usuario y vinculación por Código QR optimizado con IP Wi-Fi real), pre-escucha interactiva y despliegue en Render.com",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

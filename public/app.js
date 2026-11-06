@@ -784,7 +784,14 @@ async function checkSpotifyStatus() {
     try {
         const data = await safeFetchJson(`/api/spotify/status?userId=${encodeURIComponent(currentUserId)}`);
 
-        $('spotifySuggestedRedirectUri').textContent = data.redirectUri;
+        if (data.recommendedUris && data.recommendedUris.length >= 2) {
+            if ($('uriLocalCopy')) $('uriLocalCopy').textContent = data.recommendedUris[0];
+            if ($('uriWifiCopy')) $('uriWifiCopy').textContent = data.recommendedUris[1];
+        }
+
+        if (data.clientId && $('spotifyInputClientId')) {
+            $('spotifyInputClientId').value = data.clientId;
+        }
 
         if (!data.configured) {
             $('spotifySetupBox').classList.remove('hide');
@@ -798,9 +805,6 @@ async function checkSpotifyStatus() {
             $('spotifySetupBox').classList.add('hide');
             $('spotifyLoginBox').classList.remove('hide');
             $('spotifyConnectedBox').classList.add('hide');
-
-            // Configurar enlace para la computadora
-            $('btnSpotifyAuth').href = `/api/spotify/login?userId=${encodeURIComponent(currentUserId)}&username=${encodeURIComponent(currentUsername)}`;
 
             // Cargar Código QR para celular
             loadSpotifyQr();
@@ -839,6 +843,26 @@ async function checkSpotifyStatus() {
     } catch (err) {
         console.error('Error al verificar estado de Spotify:', err);
     }
+}
+
+// Botón de autenticación directa en la PC
+$('btnSpotifyAuth').onclick = () => {
+    if (!currentUserId) {
+        alert('Debes iniciar sesión con tu cuenta de chat primero.');
+        return;
+    }
+    window.location.href = `/api/spotify/login?userId=${encodeURIComponent(currentUserId)}&username=${encodeURIComponent(currentUsername)}`;
+};
+
+if ($('btnCopyUris')) {
+    $('btnCopyUris').onclick = () => {
+        const u1 = $('uriLocalCopy').textContent;
+        const u2 = $('uriWifiCopy').textContent;
+        navigator.clipboard.writeText(`${u1}\n${u2}`);
+        const prev = $('btnCopyUris').textContent;
+        $('btnCopyUris').textContent = '✔ ¡Copiadas al portapapeles!';
+        setTimeout(() => { $('btnCopyUris').textContent = prev; }, 2000);
+    };
 }
 
 async function loadSpotifyQr() {

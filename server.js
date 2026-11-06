@@ -2,8 +2,10 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.6.0
+ * Versión: 1.6.1
  * Descripción: Servidor Express optimizado con:
+ *              - Corrección crítica de Redirect URI (prevención de redirecciones erróneas a GitHub Pages)
+ *              - Detección precisa de IP de interfaz Wi-Fi/Ethernet real para Código QR
  *              - Soporte de Spotify personal por perfil de usuario (multi-usuario)
  *              - Vinculación rápida mediante Código QR desde el teléfono móvil
  *              - Persistencia de sesiones de Spotify por usuario en temp_audio/
@@ -110,20 +112,29 @@ function sanitizeFileName(name) {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Obtener la IP de red local para que el celular pueda conectarse vía QR
+ * Obtener la IP de red local real (filtrando interfaces virtuales o APIPA 169.254.x.x)
  */
 function getLocalNetworkIp() {
     const interfaces = os.networkInterfaces();
+    let fallback = 'localhost';
+
     for (const devName in interfaces) {
         const iface = interfaces[devName];
         for (let i = 0; i < iface.length; i++) {
             const alias = iface[i];
-            if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
-                return alias.address;
+            if (alias.family === 'IPv4' && !alias.internal) {
+                // Descartar direcciones APIPA (169.254.*.*)
+                if (!alias.address.startsWith('169.254.')) {
+                    // Priorizar subredes privadas locales clásicas
+                    if (alias.address.startsWith('192.168.') || alias.address.startsWith('10.') || alias.address.startsWith('172.')) {
+                        return alias.address;
+                    }
+                    fallback = alias.address;
+                }
             }
         }
     }
-    return 'localhost';
+    return fallback;
 }
 
 /**
@@ -164,12 +175,20 @@ function formatDuration(seconds) {
 }
 
 /**
- * Obtener la URL de redirección efectiva de Spotify
+ * Obtener la URL de redirección efectiva de Spotify, blindada contra URLs externas erróneas
  */
 function getEffectiveRedirectUri(req) {
-    if (spotifyCreds.redirectUri && spotifyCreds.redirectUri.trim()) {
-        return spotifyCreds.redirectUri.trim();
+    let rawUri = (spotifyCreds.redirectUri || '').trim();
+
+    // Si la URI contiene github.io u otro dominio que no procese este backend, ignorarla
+    if (rawUri && !rawUri.includes('github.io') && (rawUri.startsWith('http://') || rawUri.startsWith('https://'))) {
+        if (!rawUri.endsWith('/api/spotify/callback')) {
+            rawUri = rawUri.replace(/\/+$/, '') + '/api/spotify/callback';
+        }
+        return rawUri;
     }
+
+    // Por defecto: basada en la petición actual que llega a este servidor
     const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
     const host = req.get('host');
     return `${proto}://${host}/api/spotify/callback`;
@@ -232,7 +251,7 @@ async function ensureValidSpotifyToken(userId) {
 
 /**
  * Endpoint: GET /api/spotify/status
- * Estado de Spotify para el usuario consultado (vía query o header x-user-id)
+ * Estado de Spotify para el usuario consultado y lista de URIs recomendadas
  */
 app.get('/api/spotify/status', (req, res) => {
     const userId = req.query.userId || req.headers['x-user-id'];
@@ -240,12 +259,21 @@ app.get('/api/spotify/status', (req, res) => {
     const userSession = userId ? userSpotifySessions[userId] : null;
     const isAuthenticated = Boolean(userSession && userSession.accessToken && Date.now() < userSession.expiresAt);
 
+    const localIp = getLocalNetworkIp();
+    const recommendedUris = [
+        `http://localhost:${PORT}/api/spotify/callback`,
+        `http://${localIp}:${PORT}/api/spotify/callback`
+    ];
+
     res.json({
         configured: isConfigured,
         clientIdMasked: spotifyCreds.clientId ? (spotifyCreds.clientId.slice(0, 6) + '...' + spotifyCreds.clientId.slice(-4)) : null,
+        clientId: spotifyCreds.clientId || '',
         authenticated: isAuthenticated,
         user: isAuthenticated ? userSession.user : null,
-        redirectUri: getEffectiveRedirectUri(req)
+        effectiveRedirectUri: getEffectiveRedirectUri(req),
+        recommendedUris,
+        localIp
     });
 });
 
@@ -261,7 +289,11 @@ app.post('/api/spotify/save-credentials', (req, res) => {
 
     spotifyCreds.clientId = clientId.trim();
     spotifyCreds.clientSecret = clientSecret.trim();
-    if (redirectUri) spotifyCreds.redirectUri = redirectUri.trim();
+    if (redirectUri) {
+        spotifyCreds.redirectUri = redirectUri.trim();
+    } else if (!spotifyCreds.redirectUri || spotifyCreds.redirectUri.includes('github.io')) {
+        spotifyCreds.redirectUri = `http://localhost:${PORT}/api/spotify/callback`;
+    }
 
     try {
         const envPath = path.join(ROOT_DIR, '.env');
@@ -281,9 +313,7 @@ app.post('/api/spotify/save-credentials', (req, res) => {
 
         envContent = updateEnvVar(envContent, 'SPOTIFY_CLIENT_ID', spotifyCreds.clientId);
         envContent = updateEnvVar(envContent, 'SPOTIFY_CLIENT_SECRET', spotifyCreds.clientSecret);
-        if (spotifyCreds.redirectUri) {
-            envContent = updateEnvVar(envContent, 'SPOTIFY_REDIRECT_URI', spotifyCreds.redirectUri);
-        }
+        envContent = updateEnvVar(envContent, 'SPOTIFY_REDIRECT_URI', spotifyCreds.redirectUri);
 
         fs.writeFileSync(envPath, envContent.trim() + '\n', 'utf8');
         console.log('[Spotify] Credenciales guardadas exitosamente en .env');
@@ -296,7 +326,7 @@ app.post('/api/spotify/save-credentials', (req, res) => {
 
 /**
  * Endpoint: GET /api/spotify/qr
- * Genera un Código QR para escanear con el teléfono móvil y vincular Spotify al perfil
+ * Genera un Código QR apuntando a la IP Wi-Fi real del equipo para escanear con el teléfono
  */
 app.get('/api/spotify/qr', async (req, res) => {
     const userId = req.query.userId;
@@ -311,13 +341,12 @@ app.get('/api/spotify/qr', async (req, res) => {
     }
 
     try {
-        // En local, usamos la IP de red para que el celular en Wi-Fi pueda resolver el enlace
-        const isRender = Boolean(process.env.RENDER || process.env.SPOTIFY_REDIRECT_URI);
+        const isRender = Boolean(process.env.RENDER || (spotifyCreds.redirectUri && !spotifyCreds.redirectUri.includes('localhost')));
         const hostBase = isRender 
-            ? (process.env.SPOTIFY_REDIRECT_URI ? new URL(process.env.SPOTIFY_REDIRECT_URI).origin : `https://${req.get('host')}`)
+            ? `https://${req.get('host')}`
             : `http://${getLocalNetworkIp()}:${PORT}`;
 
-        const authEndpointUrl = `${hostBase}/api/spotify/login?userId=${encodeURIComponent(userId)}&username=${encodeURIComponent(username)}`;
+        const authEndpointUrl = `${hostBase}/api/spotify/login?userId=${encodeURIComponent(userId)}&username=${encodeURIComponent(username)}&fromMobile=1`;
 
         // Generar QR en formato Data URL PNG
         const qrDataUrl = await QRCode.toDataURL(authEndpointUrl, {
@@ -333,7 +362,8 @@ app.get('/api/spotify/qr', async (req, res) => {
         res.json({
             success: true,
             authUrl: authEndpointUrl,
-            qrDataUrl
+            qrDataUrl,
+            hostBase
         });
     } catch (err) {
         console.error('[Spotify QR] Error:', err);
@@ -347,7 +377,13 @@ app.get('/api/spotify/qr', async (req, res) => {
  */
 app.get('/api/spotify/login', (req, res) => {
     if (!spotifyCreds.clientId || !spotifyCreds.clientSecret) {
-        return res.status(400).send('Debes configurar primero SPOTIFY_CLIENT_ID y SPOTIFY_CLIENT_SECRET.');
+        return res.status(400).send(`
+            <html><body style="background:#0c0e12;color:#fff;font-family:sans-serif;padding:2rem;text-align:center;">
+                <h2>Faltan credenciales de Spotify</h2>
+                <p>Configura primero tu Client ID y Client Secret en la aplicación.</p>
+                <a href="/" style="color:#1db954;">Regresar a la app</a>
+            </body></html>
+        `);
     }
 
     const userId = req.query.userId || 'anon';
@@ -378,6 +414,7 @@ app.get('/api/spotify/login', (req, res) => {
     authUrl.searchParams.set('redirect_uri', redirectUri);
     authUrl.searchParams.set('state', state);
 
+    console.log(`[Spotify Login] Iniciando login para @${username} (userId: ${userId}). Redirect URI: ${redirectUri}`);
     res.redirect(authUrl.toString());
 });
 
@@ -389,8 +426,33 @@ app.get('/api/spotify/callback', async (req, res) => {
     const { code, state, error } = req.query;
 
     if (error) {
-        console.error('[Spotify Callback] Error de autorización:', error);
-        return res.redirect('/#spotify_error=' + encodeURIComponent(error));
+        console.error('[Spotify Callback] Error devuelto por Spotify:', error);
+        return res.send(`
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta charset="UTF-8">
+                <title>Error de Spotify</title>
+                <style>
+                    body { background: #0c0e12; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
+                    .card { background: #15181f; border: 1px solid #ef4444; border-radius: 16px; padding: 2rem; max-width: 440px; box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
+                    .icon { font-size: 3rem; margin-bottom: 0.5rem; color: #ef4444; }
+                    h2 { margin: 0 0 0.5rem 0; }
+                    p { color: #9ca3af; font-size: 0.9rem; line-height: 1.4; }
+                    a { display: inline-block; margin-top: 1.2rem; background: #1db954; color: #fff; padding: 10px 20px; border-radius: 20px; text-decoration: none; font-weight: bold; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">⚠️</div>
+                    <h2>Error de Autorización en Spotify</h2>
+                    <p>Spotify devolvió el error: <strong style="color:#ef4444;">${error}</strong></p>
+                    <p style="margin-top:8px;">Asegúrate de agregar la Redirect URI exacta en los Settings de tu app en <a href="https://developer.spotify.com/dashboard" target="_blank" style="color:#1db954;">Spotify Developer</a>.</p>
+                    <a href="/">Regresar a la Aplicación</a>
+                </div>
+            </body>
+            </html>
+        `);
     }
 
     if (!code) {
@@ -443,7 +505,7 @@ app.get('/api/spotify/callback', async (req, res) => {
             console.warn('[Spotify Callback] No se pudo obtener el perfil de Spotify:', uErr);
         }
 
-        // Asociar sesión de Spotify al usuario específico
+        // Asociar sesión de Spotify al perfil de usuario específico
         const targetUserId = stateData.userId || 'anon';
         userSpotifySessions[targetUserId] = {
             accessToken: tokenData.access_token,
@@ -455,7 +517,7 @@ app.get('/api/spotify/callback', async (req, res) => {
         };
 
         persistSpotifySessions();
-        console.log(`[Spotify] Usuario autenticado exitosamente: "${userProfile?.display_name}" vinculado al perfil ID: ${targetUserId} (@${stateData.username})`);
+        console.log(`[Spotify] ✔ Perfil de Spotify "${userProfile?.display_name || userProfile?.id}" vinculado con éxito al usuario @${stateData.username} (ID: ${targetUserId})`);
 
         // Si la autorización se hizo desde un dispositivo móvil (ej. escaneo de QR)
         if (stateData.isMobile) {
@@ -477,9 +539,9 @@ app.get('/api/spotify/callback', async (req, res) => {
                 <body>
                     <div class="card">
                         <div class="icon">✔</div>
-                        <h2>¡Cuenta Vinculada!</h2>
-                        <p>Tu cuenta de Spotify <strong>${userProfile?.display_name || ''}</strong> se ha conectado con éxito a tu perfil de chat.</p>
-                        <p style="margin-top: 1rem; font-size: 0.85rem; color: #10b981;">Ya puedes regresar a la pantalla de tu computadora.</p>
+                        <h2>¡Spotify Conectado!</h2>
+                        <p>Tu cuenta de Spotify <strong>${userProfile?.display_name || ''}</strong> se ha vinculado a tu usuario <strong>@${stateData.username}</strong>.</p>
+                        <p style="margin-top: 1rem; font-size: 0.85rem; color: #10b981;">Ya puedes volver a la pantalla de tu computadora, la música cargará automáticamente.</p>
                     </div>
                 </body>
                 </html>
@@ -1024,16 +1086,17 @@ app.use((req, res) => {
 
 // Inicializar el servidor en 0.0.0.0 con captura de error EADDRINUSE amigable
 const server = app.listen(PORT, '0.0.0.0', () => {
+    const localIp = getLocalNetworkIp();
     console.log(`=======================================================`);
-    console.log(` Servidor de Conversión YouTube + Spotify -> MP3 v1.6.0:`);
-    console.log(` http://localhost:${PORT}`);
-    console.log(` Red Local para QR: http://${getLocalNetworkIp()}:${PORT}`);
+    console.log(` Servidor de Conversión YouTube + Spotify -> MP3 v1.6.1:`);
+    console.log(` Local:      http://localhost:${PORT}`);
+    console.log(` Red Wi-Fi:  http://${localIp}:${PORT}`);
     console.log(` Plataforma activa: ${process.platform} (${process.arch})`);
-    console.log(` yt-dlp: ${YTDLP_BIN}`);
-    console.log(` ffmpeg: ${FFMPEG_BIN}`);
-    console.log(` Conectado a Supabase: ${SUPABASE_URL}`);
-    console.log(` Conectado a Media API: ${MEDIA_API_URL}`);
-    console.log(` Spotify Configurado: ${spotifyCreds.clientId ? 'SÍ' : 'NO'}`);
+    console.log(` yt-dlp:     ${YTDLP_BIN}`);
+    console.log(` ffmpeg:     ${FFMPEG_BIN}`);
+    console.log(` Supabase:   ${SUPABASE_URL}`);
+    console.log(` Media API:  ${MEDIA_API_URL}`);
+    console.log(` Spotify Client ID: ${spotifyCreds.clientId ? (spotifyCreds.clientId.slice(0, 6) + '...') : 'NO CONFIGURADO'}`);
     console.log(`=======================================================`);
 });
 

@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor YouTube y Spotify a MP3 - Supabase Chat v1.6.0</title>
-    <!-- Estilos de la aplicación v1.6.0 -->
+    <title>Conversor YouTube y Spotify a MP3 - Supabase Chat v1.6.1</title>
+    <!-- Estilos de la aplicación v1.6.1 -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -132,12 +132,18 @@
                     </p>
                     <div class="spotify-guide-steps">
                         <ol style="font-size: 0.82rem; color: #ccc; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 4px; margin: 8px 0;">
-                            <li>Entra a <a href="https://developer.spotify.com/dashboard" target="_blank" style="color: var(--primary);">developer.spotify.com/dashboard</a> e inicia sesión.</li>
-                            <li>Crea una App gratis (ej. "Chat Music Uploader").</li>
-                            <li>En <strong>Settings</strong> de tu app, agrega esta <strong>Redirect URI</strong>:
-                                <br><code id="spotifySuggestedRedirectUri" style="background: #111; padding: 2px 6px; border-radius: 4px; color: #10b981; word-break: break-all;"></code>
+                            <li>Entra a <a href="https://developer.spotify.com/dashboard" target="_blank" style="color: var(--primary);">developer.spotify.com/dashboard</a> e inicia sesión con tu cuenta de Spotify.</li>
+                            <li>Abre tu App y entra a <strong>Settings</strong>.</li>
+                            <li>En <strong>Redirect URIs</strong>, agrega obligatoriamente estas dos direcciones:
+                                <div style="margin: 6px 0; display: flex; flex-direction: column; gap: 4px;">
+                                    <code id="uriLocalCopy" style="background: #111; padding: 4px 8px; border-radius: 4px; color: #10b981; font-size: 0.82rem; word-break: break-all;">http://localhost:3000/api/spotify/callback</code>
+                                    <code id="uriWifiCopy" style="background: #111; padding: 4px 8px; border-radius: 4px; color: #10b981; font-size: 0.82rem; word-break: break-all;">http://192.168.50.249:3000/api/spotify/callback</code>
+                                </div>
+                                <button type="button" id="btnCopyUris" class="btn-secondary" style="padding: 3px 8px; font-size: 0.75rem; width: auto; align-self: flex-start;">
+                                    📋 Copiar Redirect URIs
+                                </button>
                             </li>
-                            <li>Copia tu <strong>Client ID</strong> y <strong>Client Secret</strong> aquí abajo:</li>
+                            <li style="margin-top: 4px;">Guarda los cambios en Spotify y copia tu <strong>Client ID</strong> y <strong>Client Secret</strong> aquí abajo:</li>
                         </ol>
                     </div>
                     <div class="form-group" style="margin-top: 8px;">
@@ -168,14 +174,14 @@
                             <div class="spotify-method-card">
                                 <div class="spotify-method-title">📱 Conectar con tu Celular (QR)</div>
                                 <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">
-                                    Apunta la cámara de tu teléfono a este código para iniciar sesión con tu cuenta de Spotify móvil:
+                                    Apunta la cámara de tu teléfono (en la misma red Wi-Fi) para iniciar sesión con tu cuenta móvil:
                                 </p>
                                 <div class="qr-container" id="spotifyQrContainer">
                                     <img id="spotifyQrImg" src="" alt="Código QR de Conexión" class="spotify-qr-image hide">
                                     <div id="spotifyQrLoading" style="font-size: 0.82rem; color: var(--text-muted); padding: 2rem 1rem;">Generando código QR...</div>
                                 </div>
                                 <div style="font-size: 0.75rem; color: #10b981; margin-top: 6px; text-align: center;">
-                                    ⚡ Se conectará automáticamente al escanear
+                                    ⚡ Se conectará automáticamente al autorizar
                                 </div>
                             </div>
 
@@ -183,15 +189,21 @@
                             <div class="spotify-method-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
                                 <div class="spotify-method-title">💻 Conectar desde esta Computadora</div>
                                 <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 16px;">
-                                    Si ya tienes tu sesión de Spotify abierta en este navegador:
+                                    Abre la pantalla oficial de autorización de Spotify directamente en este navegador:
                                 </p>
-                                <a id="btnSpotifyAuth" href="#" class="btn-spotify" style="text-decoration: none; display: inline-flex; width: 100%; max-width: 240px; padding: 0.75rem 1.2rem; font-size: 0.92rem; justify-content: center;">
+                                <button id="btnSpotifyAuth" class="btn-spotify" type="button" style="width: 100%; max-width: 240px; padding: 0.75rem 1.2rem; font-size: 0.92rem;">
                                     Iniciar Sesión en esta PC
-                                </a>
+                                </button>
                             </div>
                         </div>
 
-                        <div style="margin-top: 1.2rem; text-align: center;">
+                        <!-- Nota importante de configuración de Redirect URIs -->
+                        <div style="margin-top: 1.2rem; padding: 10px 14px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 10px; font-size: 0.8rem; color: #ccc;">
+                            💡 <strong>Recordatorio importante:</strong> Tu app en <a href="https://developer.spotify.com/dashboard" target="_blank" style="color: var(--primary);">developer.spotify.com</a> debe tener agregada en sus <em>Settings &gt; Redirect URIs</em> la dirección exacta:
+                            <br><code style="color: #10b981;">http://localhost:3000/api/spotify/callback</code>
+                        </div>
+
+                        <div style="margin-top: 1rem; text-align: center;">
                             <button id="btnEditSpotifyCreds" class="btn-link" type="button" style="font-size: 0.8rem; color: var(--text-muted); background: none; border: none; text-decoration: underline; cursor: pointer;">
                                 ⚙ Cambiar credenciales de Spotify Developer
                             </button>
