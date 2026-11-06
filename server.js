@@ -2,12 +2,13 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.2.0
- * Descripción: Servidor Node.js / Express con endpoints para:
- *              - Conversión de YouTube a MP3 y subida a R2 / Supabase
- *              - Búsqueda en YouTube en tiempo real (ytsearch)
- *              - Detección y lectura de Playlists de YouTube
- *              - Deduplicación por hash SHA-256 y detección de similitud
+ * Versión: 1.3.0
+ * Descripción: Servidor Express robusto con:
+ *              - Soporte nativo de Node.js como JavaScript Runtime (--js-runtimes node)
+ *              - Pipeline de reintentos automáticos (Retry Loop con rotación de clientes
+ *                para erradicar el error HTTP 403 Forbidden de YouTube)
+ *              - Búsqueda en tiempo real y lectura de playlists
+ *              - Manejador global de errores que garantiza respuestas JSON válidas
  * ============================================================================
  */
 
@@ -60,7 +61,12 @@ function sanitizeFileName(name) {
 }
 
 /**
- * Función para ejecutar procesos de forma asíncrona mediante promesas
+ * Función de pausa asíncrona para retroceso exponencial en reintentos
+ */
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Ejecutar procesos de forma asíncrona mediante promesas
  */
 function runProcess(cmdPath, args) {
     return new Promise((resolve, reject) => {
@@ -98,50 +104,68 @@ function formatDuration(seconds) {
 
 /**
  * Endpoint: POST /api/youtube-search
- * Busca canciones directamente en YouTube y devuelve resultados con carátula y duración
+ * Busca canciones directamente en YouTube con reintentos y soporte de JS runtime
  */
 app.post('/api/youtube-search', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
     const { query, limit = 8 } = req.body;
     if (!query || typeof query !== 'string' || !query.trim()) {
         return res.status(400).json({ error: 'Debes ingresar un término de búsqueda.' });
     }
 
-    try {
-        const count = Math.min(Math.max(parseInt(limit, 10) || 8, 1), 15);
-        const args = [
-            `ytsearch${count}:${query.trim()}`,
-            '--dump-single-json',
-            '--no-warnings',
-            '--skip-download',
-            '--flat-playlist'
-        ];
+    const count = Math.min(Math.max(parseInt(limit, 10) || 8, 1), 15);
+    const clientOptions = [
+        'youtube:player_client=android,web',
+        'youtube:player_client=web,android',
+        'youtube:player_client=mweb'
+    ];
 
-        const { stdout } = await runProcess(YTDLP_BIN, args);
-        const data = JSON.parse(stdout);
-        const entries = data.entries || [];
+    let lastError = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const clientArg = clientOptions[attempt - 1] || clientOptions[0];
+            const args = [
+                '--js-runtimes', 'node',
+                '--extractor-args', clientArg,
+                `ytsearch${count}:${query.trim()}`,
+                '--dump-single-json',
+                '--no-warnings',
+                '--skip-download',
+                '--flat-playlist'
+            ];
 
-        const results = entries.map(item => {
-            const thumb = item.thumbnails && item.thumbnails.length > 0 
-                ? item.thumbnails[item.thumbnails.length - 1].url 
-                : (item.thumbnail || `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`);
+            const { stdout } = await runProcess(YTDLP_BIN, args);
+            const data = JSON.parse(stdout);
+            const entries = data.entries || [];
 
-            return {
-                id: item.id,
-                url: item.url || `https://www.youtube.com/watch?v=${item.id}`,
-                title: item.title,
-                cleanTitle: sanitizeFileName(item.title.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ')),
-                uploader: item.uploader || item.channel || 'YouTube',
-                duration: item.duration || 0,
-                durationString: formatDuration(item.duration),
-                thumbnail: thumb
-            };
-        });
+            const results = entries.map(item => {
+                const thumb = item.thumbnails && item.thumbnails.length > 0 
+                    ? item.thumbnails[item.thumbnails.length - 1].url 
+                    : (item.thumbnail || `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`);
 
-        return res.json({ query: query.trim(), results });
-    } catch (err) {
-        console.error('Error al buscar en YouTube:', err);
-        return res.status(500).json({ error: 'Error al realizar la búsqueda en YouTube.' });
+                return {
+                    id: item.id,
+                    url: item.url || `https://www.youtube.com/watch?v=${item.id}`,
+                    title: item.title,
+                    cleanTitle: sanitizeFileName(item.title.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ')),
+                    uploader: item.uploader || item.channel || 'YouTube',
+                    duration: item.duration || 0,
+                    durationString: formatDuration(item.duration),
+                    thumbnail: thumb
+                };
+            });
+
+            return res.json({ query: query.trim(), results });
+        } catch (err) {
+            lastError = err;
+            console.warn(`[YouTube Search] Intento ${attempt} falló para "${query}": ${err.message}. Reintentando...`);
+            if (attempt < 3) await sleep(1200 * attempt);
+        }
     }
+
+    return res.status(500).json({
+        error: `Error al buscar en YouTube tras 3 intentos: ${lastError ? lastError.message : 'Error desconocido'}`
+    });
 });
 
 /**
@@ -149,6 +173,7 @@ app.post('/api/youtube-search', async (req, res) => {
  * Detecta si una URL corresponde a una lista de reproducción (Playlist) y lista sus pistas
  */
 app.post('/api/playlist-info', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
     const { url } = req.body;
     if (!url || typeof url !== 'string' || !url.trim()) {
         return res.status(400).json({ error: 'Debes proporcionar una URL válida de playlist.' });
@@ -156,6 +181,8 @@ app.post('/api/playlist-info', async (req, res) => {
 
     try {
         const args = [
+            '--js-runtimes', 'node',
+            '--extractor-args', 'youtube:player_client=android,web',
             '--dump-single-json',
             '--no-warnings',
             '--flat-playlist',
@@ -203,47 +230,66 @@ app.post('/api/playlist-info', async (req, res) => {
 
 /**
  * Endpoint: POST /api/video-info
- * Extrae metadatos previos de un video individual de YouTube
+ * Extrae metadatos previos de un video individual con reintentos automáticos
  */
 app.post('/api/video-info', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
     const { url } = req.body;
     if (!url || typeof url !== 'string' || !url.trim()) {
         return res.status(400).json({ error: 'Debes proporcionar una URL válida de YouTube.' });
     }
 
-    try {
-        const args = [
-            '--dump-single-json',
-            '--no-warnings',
-            '--no-playlist',
-            '--skip-download',
-            url.trim()
-        ];
+    const clientOptions = [
+        'youtube:player_client=android,web',
+        'youtube:player_client=web,android',
+        'youtube:player_client=mweb'
+    ];
 
-        const { stdout } = await runProcess(YTDLP_BIN, args);
-        const data = JSON.parse(stdout);
+    let lastError = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const clientArg = clientOptions[attempt - 1] || clientOptions[0];
+            const args = [
+                '--js-runtimes', 'node',
+                '--extractor-args', clientArg,
+                '--dump-single-json',
+                '--no-warnings',
+                '--no-playlist',
+                '--skip-download',
+                url.trim()
+            ];
 
-        return res.json({
-            id: data.id,
-            title: data.title,
-            cleanTitle: sanitizeFileName(data.title.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ')),
-            duration: data.duration,
-            durationString: data.duration_string || formatDuration(data.duration),
-            uploader: data.uploader || data.channel,
-            thumbnail: data.thumbnail
-        });
-    } catch (err) {
-        console.error('Error al obtener info del video:', err);
-        return res.status(500).json({ error: 'No se pudo obtener información del video. Verifica que la URL sea válida y pública.' });
+            const { stdout } = await runProcess(YTDLP_BIN, args);
+            const data = JSON.parse(stdout);
+
+            return res.json({
+                id: data.id,
+                title: data.title,
+                cleanTitle: sanitizeFileName(data.title.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ')),
+                duration: data.duration,
+                durationString: data.duration_string || formatDuration(data.duration),
+                uploader: data.uploader || data.channel,
+                thumbnail: data.thumbnail
+            });
+        } catch (err) {
+            lastError = err;
+            console.warn(`[Video Info] Intento ${attempt} falló para "${url}": ${err.message}`);
+            if (attempt < 3) await sleep(1200 * attempt);
+        }
     }
+
+    return res.status(500).json({
+        error: `No se pudo obtener la información del video tras 3 intentos: ${lastError ? lastError.message : 'Error desconocido'}`
+    });
 });
 
 /**
  * Endpoint: POST /api/convert-and-upload
- * Orquesta la descarga de audio de YouTube, conversión a MP3, hash SHA-256,
- * subida al Cloudflare Worker R2 y registro en la tabla music_tracks de Supabase.
+ * Orquesta la descarga de audio de YouTube con REINTENTOS AUTOMÁTICOS ante errores 403 Forbidden,
+ * transcodificación a MP3, hash SHA-256, subida a R2 y registro en Supabase.
  */
 app.post('/api/convert-and-upload', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
     const { url, album, customTitle, accessToken, userId } = req.body;
 
     if (!url || !accessToken || !userId) {
@@ -254,24 +300,61 @@ app.post('/api/convert-and-upload', async (req, res) => {
     const tempFileTemplate = path.join(TEMP_DIR, `${tempId}.%(ext)s`);
     const expectedMp3Path = path.join(TEMP_DIR, `${tempId}.mp3`);
 
+    const clientStrategies = [
+        'youtube:player_client=android,web',
+        'youtube:player_client=web,android',
+        'youtube:player_client=mweb'
+    ];
+
     try {
-        console.log(`[YouTube Convert] Iniciando descarga: ${url}`);
+        console.log(`[YouTube Convert] Iniciando pipeline de conversión para: ${url}`);
 
-        // 1. Descarga del audio y transcodificación a MP3 usando yt-dlp y ffmpeg
-        const ytdlArgs = [
-            '--ffmpeg-location', FFMPEG_BIN,
-            '-x',
-            '--audio-format', 'mp3',
-            '--audio-quality', '0',
-            '-o', tempFileTemplate,
-            '--no-playlist',
-            url.trim()
-        ];
+        let downloadSuccess = false;
+        let lastDownloadError = null;
 
-        await runProcess(YTDLP_BIN, ytdlArgs);
+        // BUCLE DE REINTENTOS AUTOMÁTICOS (Hasta 3 intentos con rotación de clientes y backoff)
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                const clientArg = clientStrategies[attempt - 1] || clientStrategies[0];
+                console.log(`[YouTube Convert] Intento ${attempt}/3 usando estrategia: ${clientArg}`);
 
-        if (!fs.existsSync(expectedMp3Path)) {
-            throw new Error('No se generó el archivo MP3 correspondiente.');
+                const ytdlArgs = [
+                    '--js-runtimes', 'node',
+                    '--extractor-args', clientArg,
+                    '--retries', '3',
+                    '--fragment-retries', '3',
+                    '--ffmpeg-location', FFMPEG_BIN,
+                    '-x',
+                    '--audio-format', 'mp3',
+                    '--audio-quality', '0',
+                    '-o', tempFileTemplate,
+                    '--no-playlist',
+                    url.trim()
+                ];
+
+                await runProcess(YTDLP_BIN, ytdlArgs);
+
+                if (fs.existsSync(expectedMp3Path)) {
+                    downloadSuccess = true;
+                    console.log(`[YouTube Convert] Descarga y transcodificación completadas exitosamente en el intento ${attempt}.`);
+                    break;
+                }
+            } catch (dlErr) {
+                lastDownloadError = dlErr;
+                console.warn(`[YouTube Convert] Intento ${attempt} no exitoso: ${dlErr.message}`);
+                // Si el archivo quedó corrupto o a medias, removerlo antes del próximo intento
+                if (fs.existsSync(expectedMp3Path)) {
+                    try { fs.unlinkSync(expectedMp3Path); } catch (e) {}
+                }
+                if (attempt < 3) {
+                    console.log(`[YouTube Convert] Esperando para reintentar con cliente alternativo...`);
+                    await sleep(1500 * attempt);
+                }
+            }
+        }
+
+        if (!downloadSuccess || !fs.existsSync(expectedMp3Path)) {
+            throw new Error(`No se pudo descargar el audio de YouTube tras 3 intentos automáticos: ${lastDownloadError ? lastDownloadError.message : 'Error 403 Forbidden o formato restringido'}`);
         }
 
         const mp3Buffer = fs.readFileSync(expectedMp3Path);
@@ -310,31 +393,40 @@ app.post('/api/convert-and-upload', async (req, res) => {
             console.warn('[YouTube Convert] Aviso en verificación de RPC de hash:', rpcErr);
         }
 
-        // 5. Si no existe previamente en R2, subir el MP3 a Cloudflare R2 Worker
+        // 5. Si no existe previamente en R2, subir el MP3 a Cloudflare R2 Worker con reintentos
         if (!fileName) {
             console.log(`[YouTube Convert] Subiendo nuevo archivo a Cloudflare R2 Worker...`);
-            const uploadRes = await fetch(`${MEDIA_API_URL}/upload/music`, {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    'Content-Type': 'audio/mpeg',
-                    'X-File-Name': encodeURIComponent(`${displayName}.mp3`)
-                },
-                body: mp3Buffer
-            });
-
+            let uploadRes = null;
             let uploadPayload = null;
-            try {
-                uploadPayload = await uploadRes.json();
-            } catch (jsonErr) {
-                // Sin JSON
+
+            for (let upAttempt = 1; upAttempt <= 3; upAttempt++) {
+                try {
+                    uploadRes = await fetch(`${MEDIA_API_URL}/upload/music`, {
+                        method: 'POST',
+                        headers: {
+                            Authorization: `Bearer ${accessToken}`,
+                            'Content-Type': 'audio/mpeg',
+                            'X-File-Name': encodeURIComponent(`${displayName}.mp3`)
+                        },
+                        body: mp3Buffer
+                    });
+
+                    try { uploadPayload = await uploadRes.json(); } catch (jsonErr) {}
+
+                    if (uploadRes.ok && uploadPayload && uploadPayload.key) {
+                        fileName = uploadPayload.key;
+                        break;
+                    }
+                } catch (upErr) {
+                    console.warn(`[YouTube Convert] Intento de subida a R2 ${upAttempt} falló:`, upErr);
+                    if (upAttempt < 3) await sleep(1000 * upAttempt);
+                }
             }
 
-            if (!uploadRes.ok || !uploadPayload || !uploadPayload.key) {
-                throw new Error((uploadPayload && uploadPayload.error) || `Error ${uploadRes.status} al subir audio a R2.`);
+            if (!fileName) {
+                throw new Error((uploadPayload && uploadPayload.error) || `Error al subir audio a R2 tras varios intentos.`);
             }
 
-            fileName = uploadPayload.key;
             console.log(`[YouTube Convert] Subida a R2 exitosa. Clave asignada: ${fileName}`);
         }
 
@@ -375,7 +467,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
         });
 
     } catch (err) {
-        console.error('[YouTube Convert] Error en proceso de conversión/subida:', err);
+        console.error('[YouTube Convert] Error en proceso:', err);
         return res.status(500).json({
             error: err.message || 'Error interno al procesar el video de YouTube.'
         });
@@ -391,10 +483,15 @@ app.post('/api/convert-and-upload', async (req, res) => {
     }
 });
 
+// Manejador global de 404 para responder siempre en JSON
+app.use((req, res) => {
+    res.status(404).json({ error: `Ruta no encontrada: ${req.method} ${req.url}` });
+});
+
 // Inicializar el servidor
 app.listen(PORT, () => {
     console.log(`=======================================================`);
-    console.log(` Servidor de Conversión YouTube -> MP3 v1.2.0 activo:`);
+    console.log(` Servidor de Conversión YouTube -> MP3 v1.3.0 activo:`);
     console.log(` http://localhost:${PORT}`);
     console.log(` Conectado a Supabase: ${SUPABASE_URL}`);
     console.log(` Conectado a Media API: ${MEDIA_API_URL}`);

@@ -2,13 +2,10 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.2.0
- * Descripción: Lógica del cliente completa:
- *              - Login y Registro idénticos al chat (sin invitados)
- *              - Buscador interactivo de YouTube y soporte de Playlists
- *              - Comparador de similitud de nombres de canciones
- *              - Agrupación por álbumes idéntica al chat original
- *              - Eliminación segura de canciones en tiempo real
+ * Versión: 1.3.0
+ * Descripción: Lógica del cliente con protección contra errores de respuesta
+ *              no-JSON (safeFetchJson), reintentos visuales, login del chat,
+ *              buscador interactivo, playlists y álbumes agrupados.
  * ============================================================================
  */
 
@@ -21,7 +18,35 @@ let currentUsername = null;
 let cachedUsernames = null;
 let myTracksCache = [];
 let collapsedAlbums = new Set();
-let pendingUploadAction = null;
+
+/**
+ * Función robusta para realizar fetch esperando JSON, evitando errores de 'Unexpected token <'
+ */
+async function safeFetchJson(url, options) {
+    let res = null;
+    try {
+        res = await fetch(url, options);
+    } catch (netErr) {
+        throw new Error('No se pudo comunicar con el servidor local. Verifica que la consola tenga corriendo "npm start".');
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Error del servidor (${res.status})`);
+        return data;
+    } else {
+        const text = await res.text();
+        if (!res.ok) {
+            throw new Error(`El servidor devolvió error ${res.status}. Reinicia el servidor en la terminal con "npm start" para aplicar los cambios.`);
+        }
+        try {
+            return JSON.parse(text);
+        } catch (parseErr) {
+            throw new Error('El servidor devolvió una respuesta inesperada.');
+        }
+    }
+}
 
 // ══════════════════════════════════════════════════════════════════════
 // 1. SISTEMA DE LOGIN Y REGISTRO (IDÉNTICO AL CHAT ORIGINAL SIN INVITADOS)
@@ -38,7 +63,6 @@ function showLockError(msg) {
     }
 }
 
-// Conmutar entre Formulario de Inicio de Sesión y Registro
 $('showRegisterLink').onclick = () => {
     showLockError('');
     $('accountForm').classList.add('hide');
@@ -53,7 +77,6 @@ $('showLoginLink').onclick = () => {
     $('accountUsernameInput').focus();
 };
 
-// Cargar usuarios registrados para selector rápido
 async function fetchUsernames() {
     if (cachedUsernames) return cachedUsernames;
     try {
@@ -93,7 +116,6 @@ $('userDropdownSelect').onchange = (e) => {
     $('accountPasswordInput').focus();
 };
 
-// Iniciar sesión con cuenta personal
 async function handleLogin() {
     const username = $('accountUsernameInput').value.trim();
     const password = $('accountPasswordInput').value;
@@ -137,7 +159,6 @@ $('accountPasswordInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleLogin();
 });
 
-// Registro de nueva cuenta
 async function handleRegister() {
     const username = $('registerUsernameInput').value.trim();
     const password = $('registerPasswordInput').value;
@@ -153,9 +174,8 @@ async function handleRegister() {
         $('registerBtn').textContent = 'Creando cuenta...';
 
         await registerAccount(username, password);
-        cachedUsernames = null; // invalidar lista
+        cachedUsernames = null;
 
-        // Iniciar sesión directamente tras registrar
         $('accountUsernameInput').value = username;
         $('accountPasswordInput').value = password;
         $('registerForm').classList.add('hide');
@@ -204,7 +224,6 @@ function logEvent(message, type = 'info') {
     consoleBox.scrollTop = consoleBox.scrollHeight;
 }
 
-// Conmutar pestañas de modo
 $('tabModeSearch').onclick = () => {
     $('tabModeSearch').classList.add('active');
     $('tabModeDirect').classList.remove('active');
@@ -220,7 +239,7 @@ $('tabModeDirect').onclick = () => {
 };
 
 // ══════════════════════════════════════════════════════════════════════
-// 3. BUSCADOR INTEGRADO DE YOUTUBE
+// 3. BUSCADOR INTEGRADO DE YOUTUBE (PROTEGIDO)
 // ══════════════════════════════════════════════════════════════════════
 
 async function searchYouTube() {
@@ -236,14 +255,11 @@ async function searchYouTube() {
         resultsGrid.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1rem;">Buscando canciones en YouTube...</div>';
         resultsGrid.classList.remove('hide');
 
-        const res = await fetch('/api/youtube-search', {
+        const data = await safeFetchJson('/api/youtube-search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query, limit: 8 })
         });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error al buscar en YouTube');
 
         if (!data.results || data.results.length === 0) {
             resultsGrid.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1rem;">No se encontraron resultados para tu búsqueda.</div>';
@@ -284,15 +300,12 @@ async function searchYouTube() {
                 $('youtubeUrlInput').value = item.url;
                 $('customTitleInput').value = item.cleanTitle || item.title;
 
-                // Previsualizar en la tarjeta
                 $('videoPreviewBox').classList.remove('hide');
                 $('videoThumbImg').src = item.thumbnail;
                 $('videoMetaTitle').textContent = item.title;
                 $('videoMetaDetails').textContent = `${item.uploader} • Duración: ${item.durationString}`;
 
                 logEvent(`Seleccionado: "${item.title}" (${item.durationString})`, 'info');
-
-                // Desplazar al botón de subida
                 $('trackConfigSection').scrollIntoView({ behavior: 'smooth' });
             };
 
@@ -303,7 +316,7 @@ async function searchYouTube() {
         });
 
     } catch (err) {
-        resultsGrid.innerHTML = `<div style="color: var(--danger); padding: 0.5rem;">${err.message}</div>`;
+        resultsGrid.innerHTML = `<div style="color: var(--danger); padding: 0.8rem; font-size: 0.88rem;">${err.message}</div>`;
     } finally {
         btn.disabled = false;
         btn.textContent = 'Buscar';
@@ -316,7 +329,7 @@ $('ytSearchInput').addEventListener('keydown', (e) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════
-// 4. ANÁLISIS DE ENLACES INDIVIDUALES Y PLAYLISTS (LISTAS)
+// 4. ANÁLISIS DE ENLACES INDIVIDUALES Y PLAYLISTS
 // ══════════════════════════════════════════════════════════════════════
 
 let currentPlaylistData = null;
@@ -334,30 +347,25 @@ async function analyzeUrl() {
         btn.textContent = 'Analizando...';
         logEvent(`Analizando enlace: ${url}`, 'info');
 
-        // Si la URL contiene 'list=', consultar endpoint de playlist
         if (url.includes('list=')) {
-            const plRes = await fetch('/api/playlist-info', {
+            const plData = await safeFetchJson('/api/playlist-info', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url })
             });
-            const plData = await plRes.json();
 
-            if (plRes.ok && plData.isPlaylist) {
+            if (plData.isPlaylist) {
                 currentPlaylistData = plData;
                 showPlaylistView(plData);
                 return;
             }
         }
 
-        // Si es video individual
-        const res = await fetch('/api/video-info', {
+        const data = await safeFetchJson('/api/video-info', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url })
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error al obtener datos del video');
 
         $('playlistBox').classList.add('hide');
         $('videoPreviewBox').classList.remove('hide');
@@ -389,7 +397,6 @@ function showPlaylistView(plData) {
     $('playlistTitleText').textContent = `Playlist: ${plData.playlistTitle}`;
     $('playlistSubtitleText').textContent = `${plData.trackCount} canciones detectadas`;
 
-    // Pre-llenar el álbum con el título de la playlist si está vacío
     if (!$('albumInput').value.trim()) {
         $('albumInput').value = plData.playlistTitle;
     }
@@ -418,7 +425,7 @@ function showPlaylistView(plData) {
         list.appendChild(row);
     });
 
-    logEvent(`Playlist detectada: "${plData.playlistTitle}" con ${plData.trackCount} canciones.`, 'success');
+    logEvent(`Playlist detectada: "${plData.playlistTitle}" (${plData.trackCount} pistas).`, 'success');
 }
 
 $('btnSelectAllPlaylist').onclick = () => {
@@ -432,9 +439,6 @@ $('btnSelectAllPlaylist').onclick = () => {
 // 5. DETECCIÓN Y COMPARACIÓN DE NOMBRES SIMILARES
 // ══════════════════════════════════════════════════════════════════════
 
-/**
- * Normalizar título para comparación inteligente
- */
 function normalizeTitle(str) {
     if (!str) return '';
     return str
@@ -446,9 +450,6 @@ function normalizeTitle(str) {
         .trim();
 }
 
-/**
- * Calcular similitud entre dos títulos de canción (0 a 1)
- */
 function calculateSimilarity(a, b) {
     const normA = normalizeTitle(a);
     const normB = normalizeTitle(b);
@@ -456,7 +457,6 @@ function calculateSimilarity(a, b) {
     if (normA === normB) return 1.0;
     if (!normA || !normB) return 0.0;
 
-    // Si una cadena contiene sustancialmente a la otra
     if (normA.includes(normB) || normB.includes(normA)) {
         const shorter = Math.min(normA.length, normB.length);
         const longer = Math.max(normA.length, normB.length);
@@ -465,7 +465,6 @@ function calculateSimilarity(a, b) {
         }
     }
 
-    // Coeficiente Bigrama Dice
     const getBigrams = s => {
         const set = new Set();
         for (let i = 0; i < s.length - 1; i++) set.add(s.substring(i, i + 2));
@@ -478,9 +477,6 @@ function calculateSimilarity(a, b) {
     return (2.0 * common) / (bA.size + bB.size);
 }
 
-/**
- * Buscar si el usuario ya tiene una canción similar en su perfil
- */
 function findSimilarTrack(candidateTitle) {
     let bestMatch = null;
     let highestScore = 0;
@@ -495,9 +491,6 @@ function findSimilarTrack(candidateTitle) {
     return bestMatch ? { track: bestMatch, score: highestScore } : null;
 }
 
-/**
- * Mostrar modal de comparación de canciones similares
- */
 function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
     $('modalNewTitle').textContent = newTitle;
     $('modalNewAlbum').textContent = newAlbum || 'Sin álbum';
@@ -536,7 +529,6 @@ function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
 
     $('similarityModal').classList.remove('hide');
 
-    // Botones de acción del modal
     $('btnModalUploadAnyway').onclick = () => {
         $('similarityModal').classList.add('hide');
         onConfirm();
@@ -576,7 +568,7 @@ async function executeUpload(url, customTitle, album) {
     logEvent(`Descargando audio de YouTube y transcodificando a MP3...`, 'info');
 
     try {
-        const response = await fetch('/api/convert-and-upload', {
+        const result = await safeFetchJson('/api/convert-and-upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -588,12 +580,8 @@ async function executeUpload(url, customTitle, album) {
             })
         });
 
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Error en la conversión');
-
         logEvent(`✔ ${result.message}`, 'success');
 
-        // Limpiar campos
         $('youtubeUrlInput').value = '';
         $('customTitleInput').value = '';
         $('videoPreviewBox').classList.add('hide');
@@ -610,7 +598,6 @@ async function executeUpload(url, customTitle, album) {
     }
 }
 
-// Procesar Playlist en lote
 async function processPlaylistUpload(plData, album) {
     const cbs = document.querySelectorAll('#playlistTracksList input[type="checkbox"]:checked');
     const selectedTracks = Array.from(cbs).map(cb => plData.tracks[parseInt(cb.dataset.trackIndex, 10)]);
@@ -635,7 +622,7 @@ async function processPlaylistUpload(plData, album) {
             const sessionRes = await supabaseClient.auth.getSession();
             const token = sessionRes.data?.session?.access_token || currentAccessToken;
 
-            const res = await fetch('/api/convert-and-upload', {
+            const res = await safeFetchJson('/api/convert-and-upload', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -646,13 +633,9 @@ async function processPlaylistUpload(plData, album) {
                     userId: currentUserId
                 })
             });
-            const data = await res.json();
-            if (res.ok) {
-                successCount++;
-                logEvent(`✔ [${i + 1}/${selectedTracks.length}] "${t.title}" agregada.`, 'success');
-            } else {
-                logEvent(`✘ Error en "${t.title}": ${data.error}`, 'error');
-            }
+
+            successCount++;
+            logEvent(`✔ [${i + 1}/${selectedTracks.length}] "${t.title}" agregada.`, 'success');
         } catch (e) {
             logEvent(`✘ Error en "${t.title}": ${e.message}`, 'error');
         }
@@ -671,17 +654,14 @@ async function processPlaylistUpload(plData, album) {
     await loadUploadedTracks();
 }
 
-// Handler principal del botón de conversión
 $('btnConvertAndUpload').onclick = async () => {
     const album = $('albumInput').value.trim() || null;
 
-    // Caso 1: Playlist detectada
     if (currentPlaylistData && !$('playlistBox').classList.contains('hide')) {
         await processPlaylistUpload(currentPlaylistData, album);
         return;
     }
 
-    // Caso 2: Canción individual
     const url = $('youtubeUrlInput').value.trim();
     if (!url) {
         logEvent('Ingresa un enlace de YouTube o selecciona una canción del buscador.', 'warn');
@@ -693,7 +673,6 @@ $('btnConvertAndUpload').onclick = async () => {
         customTitle = `YouTube_${Date.now()}`;
     }
 
-    // Comprobar si ya existe una canción con nombre similar en el perfil
     const match = findSimilarTrack(customTitle);
     if (match) {
         showSimilarityModal(customTitle, album, match.track, () => {
@@ -746,14 +725,10 @@ async function loadUploadedTracks() {
 
 $('btnRefreshTracks').onclick = loadUploadedTracks;
 
-/**
- * Renderiza los grupos de álbumes idénticos al chat original
- */
 function renderAlbumsView() {
     const wrap = $('albumsWrapper');
     const filter = ($('filterTracksInput').value || '').trim().toLowerCase();
 
-    // Filtrar canciones según el buscador local
     const filteredTracks = filter 
         ? myTracksCache.filter(t => (t.display_name || '').toLowerCase().includes(filter))
         : myTracksCache;
@@ -765,7 +740,6 @@ function renderAlbumsView() {
         return;
     }
 
-    // Agrupar por álbum
     const NO_ALBUM_KEY = '__sin_album__';
     const groups = new Map();
 
@@ -775,7 +749,6 @@ function renderAlbumsView() {
         groups.get(key).push(track);
     });
 
-    // Ordenar claves: álbumes alfabéticamente, 'Sin álbum' al final
     const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (a === NO_ALBUM_KEY) return 1;
         if (b === NO_ALBUM_KEY) return -1;
@@ -792,7 +765,6 @@ function renderAlbumsView() {
         const groupDiv = document.createElement('div');
         groupDiv.className = 'album-group';
 
-        // Cabecera del Álbum
         const header = document.createElement('div');
         header.className = 'album-header';
 
@@ -807,7 +779,6 @@ function renderAlbumsView() {
         header.appendChild(arrow);
         header.appendChild(titleSpan);
 
-        // Contenedor de canciones del álbum
         const tracksContainer = document.createElement('div');
         tracksContainer.className = 'album-tracks-container';
         if (isCollapsed) tracksContainer.classList.add('hide');
@@ -824,7 +795,6 @@ function renderAlbumsView() {
             }
         };
 
-        // Renderizar cada canción dentro del álbum
         groupTracks.forEach(track => {
             const item = document.createElement('div');
             item.className = 'radio-item';
@@ -842,7 +812,6 @@ function renderAlbumsView() {
             const actions = document.createElement('div');
             actions.className = 'radio-actions';
 
-            // Botón de Reproducción
             const playBtn = document.createElement('button');
             playBtn.type = 'button';
             playBtn.className = 'btn-secondary';
@@ -867,7 +836,6 @@ function renderAlbumsView() {
                 }
             };
 
-            // Botón de Eliminación (🗑️)
             const delBtn = document.createElement('button');
             delBtn.type = 'button';
             delBtn.className = 'btn-delete-track';
@@ -888,7 +856,6 @@ function renderAlbumsView() {
                         .eq('id', track.id);
 
                     if (error) {
-                        // Si la política de RLS no permite delete, intentar soft-delete
                         await supabaseClient
                             .from('music_tracks')
                             .update({ deleted_at: new Date().toISOString() })
@@ -921,7 +888,6 @@ function renderAlbumsView() {
     });
 }
 
-// Botones para Desplegar / Colapsar todos los álbumes
 $('btnExpandAllAlbums').onclick = () => {
     collapsedAlbums.clear();
     renderAlbumsView();
@@ -933,5 +899,4 @@ $('btnCollapseAllAlbums').onclick = () => {
     renderAlbumsView();
 };
 
-// Filtro en tiempo real al escribir
 $('filterTracksInput').addEventListener('input', renderAlbumsView);

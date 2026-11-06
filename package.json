@@ -1,7 +1,7 @@
 {
   "name": "youtube-to-mp3-supabase-chat",
-  "version": "1.2.0",
-  "description": "Conversor de YouTube a MP3 con buscador, soporte de playlists, comparación de canciones similares, álbumes estructurados y gestión de perfil para Supabase Chat",
+  "version": "1.3.0",
+  "description": "Conversor de YouTube a MP3 con motor resiliente, rotación de clientes contra 403 Forbidden, soporte de JS runtime en Node, safeFetchJson, buscador, playlists y gestión de álbumes",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
