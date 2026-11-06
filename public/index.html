@@ -1,45 +1,45 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor YouTube a MP3 - Supabase Chat v1.8.5</title>
-    <!-- Estilos de la aplicación v1.8.5 con cache-busting -->
-    <link rel="stylesheet" href="styles.css?v=1.8.5">
+    <title>Conversor YouTube a MP3 - Supabase Chat v1.8.6</title>
+    <!-- Estilos de la aplicaciÃ³n v1.8.6 con cache-busting -->
+    <link rel="stylesheet" href="styles.css?v=1.8.6">
 </head>
 <body>
     <div class="container">
         <!-- Cabecera Principal -->
         <header>
             <h1>Conversor <span>YouTube</span> a MP3</h1>
-            <p>Descarga, convierte a MP3 y organiza álbumes vinculados a tu perfil del chat</p>
+            <p>Descarga, convierte a MP3 y organiza Ã¡lbumes vinculados a tu perfil del chat</p>
         </header>
 
-        <!-- ══════════════════════════════════════════════════════════════════
-             PANTALLA DE BLOQUEO / LOGIN (IDÉNTICO AL CHAT ORIGINAL SIN INVITADOS)
-             ══════════════════════════════════════════════════════════════════ -->
+        <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+             PANTALLA DE BLOQUEO / LOGIN (IDÃ‰NTICO AL CHAT ORIGINAL SIN INVITADOS)
+             â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
         <div class="lock-overlay" id="lockOverlay">
             <div class="lock-box">
-                <div class="lock-icon">🔒</div>
-                <p class="lock-title">Música del Chat</p>
+                <div class="lock-icon">ðŸ”’</div>
+                <p class="lock-title">MÃºsica del Chat</p>
 
-                <!-- Formulario de Inicio de Sesión de Cuenta -->
+                <!-- Formulario de Inicio de SesiÃ³n de Cuenta -->
                 <form id="accountForm" onsubmit="return false;">
                     <div class="user-select-row">
                         <input type="text" id="accountUsernameInput" placeholder="Usuario" autocomplete="username">
-                        <button type="button" id="btnUsersToggle" class="btn-user-list" title="Ver usuarios registrados">▾</button>
+                        <button type="button" id="btnUsersToggle" class="btn-user-list" title="Ver usuarios registrados">â–¾</button>
                     </div>
                     <select id="userDropdownSelect" class="hide" size="5" style="margin-top: -4px; border-radius: 12px;"></select>
                     
-                    <input type="password" id="accountPasswordInput" placeholder="Contraseña" autocomplete="current-password">
+                    <input type="password" id="accountPasswordInput" placeholder="ContraseÃ±a" autocomplete="current-password">
                     <button id="accountLoginBtn" type="button">Entrar</button>
-                    <p class="lock-switch" id="showRegisterLink">¿No tienes cuenta? Regístrate</p>
+                    <p class="lock-switch" id="showRegisterLink">Â¿No tienes cuenta? RegÃ­strate</p>
                 </form>
 
                 <!-- Formulario de Registro de Cuenta Nueva -->
                 <form id="registerForm" class="hide" onsubmit="return false;">
                     <input type="text" id="registerUsernameInput" placeholder="Elige un usuario" autocomplete="username">
-                    <input type="password" id="registerPasswordInput" placeholder="Elige una contraseña" autocomplete="new-password">
+                    <input type="password" id="registerPasswordInput" placeholder="Elige una contraseÃ±a" autocomplete="new-password">
                     <button id="registerBtn" type="button">Crear cuenta</button>
                     <p class="lock-switch" id="showLoginLink">Ya tengo cuenta</p>
                 </form>
@@ -48,23 +48,23 @@
             </div>
         </div>
 
-        <!-- ══════════════════════════════════════════════════════════════════
-             PANEL PRINCIPAL DE LA APLICACIÓN (TRAS AUTENTICARSE)
-             ══════════════════════════════════════════════════════════════════ -->
+        <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+             PANEL PRINCIPAL DE LA APLICACIÃ“N (TRAS AUTENTICARSE)
+             â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
         <section id="appCard" class="card hide">
-            <!-- Barra de Sesión de Usuario -->
+            <!-- Barra de SesiÃ³n de Usuario -->
             <div class="user-bar">
                 <div class="user-badge">
-                    <span>👤</span>
+                    <span>ðŸ‘¤</span>
                     <span>Conectado como: <strong id="currentUsernameText" style="color: #fff;"></strong></span>
                 </div>
-                <button id="btnLogout" class="btn-logout" type="button">Cerrar Sesión</button>
+                <button id="btnLogout" class="btn-logout" type="button">Cerrar SesiÃ³n</button>
             </div>
 
-            <!-- Pestañas de Modo: Buscar en YouTube vs Enlace Directo / Playlist -->
+            <!-- PestaÃ±as de Modo: Buscar en YouTube vs Enlace Directo / Playlist -->
             <div class="nav-tabs">
-                <button id="tabModeSearch" class="nav-tab active" type="button">🔍 Buscar en YouTube</button>
-                <button id="tabModeDirect" class="nav-tab" type="button">🔗 Enlace Directo / Playlist</button>
+                <button id="tabModeSearch" class="nav-tab active" type="button">ðŸ” Buscar en YouTube</button>
+                <button id="tabModeDirect" class="nav-tab" type="button">ðŸ”— Enlace Directo / Playlist</button>
             </div>
 
             <!-- VISTA 1: Buscador de YouTube Integrado con Resultados Amplios y Pre-escucha -->
@@ -72,7 +72,7 @@
                 <div class="form-group">
                     <label for="ytSearchInput">Buscar canciones en YouTube</label>
                     <div class="input-row">
-                        <input id="ytSearchInput" type="text" placeholder="Escribe el nombre de la canción o artista (ej. The Rolling Stones)...">
+                        <input id="ytSearchInput" type="text" placeholder="Escribe el nombre de la canciÃ³n o artista (ej. The Rolling Stones)...">
                         <select id="ytSearchLimitSelect" style="width: auto; padding: 0.85rem 0.6rem; font-size: 0.88rem; flex-shrink: 0;" title="Cantidad de resultados">
                             <option value="15">15 res.</option>
                             <option value="25" selected>25 res.</option>
@@ -84,21 +84,21 @@
 
                 <div id="searchControlsBar" class="search-controls-bar hide">
                     <span id="searchResultsCountText"></span>
-                    <span style="font-size: 0.78rem; color: #888;">💡 Puedes presionar "▶ Probar" para escuchar antes de convertir</span>
+                    <span style="font-size: 0.78rem; color: #888;">ðŸ’¡ Puedes presionar "â–¶ Probar" para escuchar antes de convertir</span>
                 </div>
 
-                <!-- Cuadrícula de Resultados de Búsqueda -->
+                <!-- CuadrÃ­cula de Resultados de BÃºsqueda -->
                 <div id="searchResultsGrid" class="search-results-grid hide"></div>
             </div>
 
             <!-- VISTA 2: Enlace Directo o Playlist -->
             <div id="viewDirect" class="hide">
                 <div class="form-group">
-                    <label for="youtubeUrlInput">Enlace del Video o Lista de Reproducción (Playlist)</label>
+                    <label for="youtubeUrlInput">Enlace del Video o Lista de ReproducciÃ³n (Playlist)</label>
                     <div class="input-row">
                         <input id="youtubeUrlInput" type="url" placeholder="https://www.youtube.com/watch?v=... o playlist">
                         <button id="btnFetchInfo" class="btn-secondary" type="button" style="white-space: nowrap;">
-                            <span>🔍</span> Analizar
+                            <span>ðŸ”</span> Analizar
                         </button>
                     </div>
                 </div>
@@ -118,55 +118,55 @@
                 </div>
             </div>
 
-            <!-- Previsualización del Video Individual Seleccionado -->
+            <!-- PrevisualizaciÃ³n del Video Individual Seleccionado -->
             <div id="videoPreviewBox" class="video-preview hide">
                 <img id="videoThumbImg" class="video-thumb" src="" alt="Miniatura">
                 <div class="video-meta">
-                    <div id="videoMetaTitle" class="video-meta-title">Título del video</div>
-                    <div id="videoMetaDetails" class="video-meta-sub">Canal • Duración</div>
+                    <div id="videoMetaTitle" class="video-meta-title">TÃ­tulo del video</div>
+                    <div id="videoMetaDetails" class="video-meta-sub">Canal â€¢ DuraciÃ³n</div>
                 </div>
                 <button id="btnPreviewCurrentVideo" class="btn-secondary" type="button" style="padding: 0.4rem 0.8rem; font-size: 0.82rem; white-space: nowrap;">
-                    ▶ Escuchar previo
+                    â–¶ Escuchar previo
                 </button>
             </div>
 
-            <!-- Configuración de Metadatos y Álbum -->
+            <!-- ConfiguraciÃ³n de Metadatos y Ãlbum -->
             <div id="trackConfigSection" style="margin-top: 1.2rem;">
                 <div class="form-group">
-                    <label for="customTitleInput">Nombre de la Canción (en tu perfil)</label>
-                    <input id="customTitleInput" type="text" placeholder="Nombre con el que aparecerá en el chat">
+                    <label for="customTitleInput">Nombre de la CanciÃ³n (en tu perfil)</label>
+                    <input id="customTitleInput" type="text" placeholder="Nombre con el que aparecerÃ¡ en el chat">
                 </div>
 
                 <div class="form-group">
-                    <label for="albumInput">Álbum en tu Perfil (opcional)</label>
-                    <input id="albumInput" list="albumDataList" placeholder="Escribe un nuevo álbum o elige uno existente (vacío = sin álbum)">
+                    <label for="albumInput">Ãlbum en tu Perfil (opcional)</label>
+                    <input id="albumInput" list="albumDataList" placeholder="Escribe un nuevo Ã¡lbum o elige uno existente (vacÃ­o = sin Ã¡lbum)">
                     <datalist id="albumDataList"></datalist>
                     <small style="color: var(--text-muted); font-size: 0.78rem; margin-top: 0.2rem;">
-                        Si escribes un álbum que no existe, se creará automáticamente en tu perfil.
+                        Si escribes un Ã¡lbum que no existe, se crearÃ¡ automÃ¡ticamente en tu perfil.
                     </small>
                 </div>
 
-                <!-- Tarjeta Inline Inamovible de Canción Similar (Sin bugs de modales flotantes) -->
+                <!-- Tarjeta Inline Inamovible de CanciÃ³n Similar (Sin bugs de modales flotantes) -->
                 <div id="similarityInlineCard" class="hide" style="background: #181b22; border: 2px solid #fbbf24; border-radius: 14px; padding: 1.2rem; margin-top: 1rem; margin-bottom: 1rem; box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem;">
                         <div style="display: flex; align-items: center; gap: 8px; color: #fbbf24; font-weight: 700; font-size: 1.05rem;">
-                            <span>⚠️</span>
-                            <span>Canción con Nombre Similar Detectada en tu Perfil</span>
+                            <span>âš ï¸</span>
+                            <span>CanciÃ³n con Nombre Similar Detectada en tu Perfil</span>
                         </div>
-                        <button id="btnInlineClose" type="button" style="background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; padding: 0 4px;" title="Cerrar aviso">✕</button>
+                        <button id="btnInlineClose" type="button" style="background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; padding: 0 4px;" title="Cerrar aviso">âœ•</button>
                     </div>
                     
                     <p style="font-size: 0.88rem; color: #cbd5e1; margin-bottom: 0.8rem;">
-                        Ya tienes una canción parecida registrada. Compara ambas y decide si deseas continuar:
+                        Ya tienes una canciÃ³n parecida registrada. Compara ambas y decide si deseas continuar:
                     </p>
 
                     <div class="comparison-table" id="inlineCompareTable" style="margin-bottom: 0.8rem;">
                         <!-- Nueva -->
                         <div class="compare-row new">
-                            <div class="compare-badge">Canción que vas a subir</div>
+                            <div class="compare-badge">CanciÃ³n que vas a subir</div>
                             <div style="font-weight: 600; color: #fff;" id="inlineNewTitle"></div>
                             <div style="font-size: 0.8rem; color: var(--text-muted);">
-                                Álbum destino: <span id="inlineNewAlbum" style="color: var(--primary);"></span>
+                                Ãlbum destino: <span id="inlineNewAlbum" style="color: var(--primary);"></span>
                             </div>
                         </div>
 
@@ -175,7 +175,7 @@
                             <div class="compare-badge">Ya existente en tu perfil</div>
                             <div style="font-weight: 600; color: #fff;" id="inlineExistingTitle"></div>
                             <div style="font-size: 0.8rem; color: var(--text-muted);">
-                                Álbum actual: <span id="inlineExistingAlbum" style="color: var(--warning);"></span>
+                                Ãlbum actual: <span id="inlineExistingAlbum" style="color: var(--warning);"></span>
                             </div>
                             <div id="inlineAudioCompareWrap" style="margin-top: 6px;"></div>
                         </div>
@@ -186,12 +186,12 @@
                         <label for="inlineRenameInput" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">
                             Escribe un nuevo nombre para diferenciarla:
                         </label>
-                        <input id="inlineRenameInput" type="text" style="width: 100%; padding: 0.5rem 0.8rem; font-size: 0.88rem;" placeholder="Nuevo nombre de la canción">
+                        <input id="inlineRenameInput" type="text" style="width: 100%; padding: 0.5rem 0.8rem; font-size: 0.88rem;" placeholder="Nuevo nombre de la canciÃ³n">
                     </div>
 
                     <!-- Estado de carga in-situ -->
                     <div id="inlineLoadingState" class="hide" style="text-align: center; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 8px; margin-bottom: 0.8rem;">
-                        <div style="font-size: 1.8rem; animation: pulse 1.5s infinite;">⏳</div>
+                        <div style="font-size: 1.8rem; animation: pulse 1.5s infinite;">â³</div>
                         <div id="inlineLoadingText" style="font-weight: 600; color: var(--primary); margin-top: 4px;">Descargando y subiendo...</div>
                     </div>
 
@@ -202,14 +202,14 @@
                     </div>
                 </div>
 
-                <!-- Botón de Conversión y Subida con Restablecimiento de Emergencia -->
+                <!-- BotÃ³n de ConversiÃ³n y Subida con Restablecimiento de Emergencia -->
                 <div style="display: flex; gap: 8px; align-items: stretch; margin-top: 0.5rem;">
                     <button id="btnConvertAndUpload" class="btn-primary" type="button" style="flex: 1; padding: 1rem;">
-                        <span id="convertBtnIcon">⚡</span>
+                        <span id="convertBtnIcon">âš¡</span>
                         <span id="convertBtnText">Convertir a MP3 y Subir a mi Perfil</span>
                     </button>
-                    <button id="btnResetConvertState" class="btn-secondary hide" type="button" title="Si el botón se queda atascado, pulsa aquí para restablecerlo" style="padding: 0 1rem; font-size: 0.88rem; white-space: nowrap;">
-                        ↺ Desbloquear
+                    <button id="btnResetConvertState" class="btn-secondary hide" type="button" title="Si el botÃ³n se queda atascado, pulsa aquÃ­ para restablecerlo" style="padding: 0 1rem; font-size: 0.88rem; white-space: nowrap;">
+                        â†º Desbloquear
                     </button>
                 </div>
             </div>
@@ -217,18 +217,18 @@
             <!-- Consola de Eventos y Progreso en Vivo -->
             <div id="consoleBox" class="console-box hide">
                 <div class="console-line info">
-                    <span>❯</span>
+                    <span>â¯</span>
                     <span>Consola del conversor activa...</span>
                 </div>
             </div>
 
-            <!-- ══════════════════════════════════════════════════════════════
-                 SECCIÓN DE CANCIONES Y ÁLBUMES (IDÉNTICO AL CHAT ORIGINAL)
-                 ══════════════════════════════════════════════════════════════ -->
+            <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                 SECCIÃ“N DE CANCIONES Y ÃLBUMES (IDÃ‰NTICO AL CHAT ORIGINAL)
+                 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
             <div style="margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 8px;">
                     <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <span>💿</span> Tus Canciones por Álbum
+                        <span>ðŸ’¿</span> Tus Canciones por Ãlbum
                     </h3>
                     <div style="display: flex; gap: 6px;">
                         <button id="btnExpandAllAlbums" class="btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" type="button">
@@ -238,73 +238,73 @@
                             Colapsar todo
                         </button>
                         <button id="btnRefreshTracks" class="btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" type="button">
-                            ↻ Actualizar
+                            â†» Actualizar
                         </button>
                     </div>
                 </div>
 
-                <!-- Buscador rápido dentro de tus canciones -->
-                <input id="filterTracksInput" type="text" placeholder="🔎 Filtrar canciones en tus álbumes..." style="margin-bottom: 0.8rem; padding: 0.65rem 1rem; font-size: 0.88rem;">
+                <!-- Buscador rÃ¡pido dentro de tus canciones -->
+                <input id="filterTracksInput" type="text" placeholder="ðŸ”Ž Filtrar canciones en tus Ã¡lbumes..." style="margin-bottom: 0.8rem; padding: 0.65rem 1rem; font-size: 0.88rem;">
 
-                <!-- Contenedor donde se renderizan los álbumes idénticos al chat -->
+                <!-- Contenedor donde se renderizan los Ã¡lbumes idÃ©nticos al chat -->
                 <div id="albumsWrapper" class="albums-wrapper">
                     <div style="text-align: center; color: var(--text-muted); padding: 1rem; font-size: 0.88rem;">
-                        Cargando álbumes...
+                        Cargando Ã¡lbumes...
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- ══════════════════════════════════════════════════════════════════
+        <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
              BARRA FLOTANTE DE PRE-ESCUCHA (REPRODUCTOR INMEDIATO ANTES DE SUBIR)
-             ══════════════════════════════════════════════════════════════════ -->
+             â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
         <div id="previewFixedBar" class="preview-bar-fixed hide">
             <div class="preview-bar-inner">
                 <div class="preview-bar-info">
-                    <span style="color: var(--primary);">🎵 Escuchando:</span>
+                    <span style="color: var(--primary);">ðŸŽµ Escuchando:</span>
                     <span id="previewBarTitle"></span>
                 </div>
                 <div class="preview-iframe-wrap" id="previewIframeWrap"></div>
-                <button id="btnClosePreviewBar" class="btn-close-preview" type="button" title="Cerrar preescucha">✕</button>
+                <button id="btnClosePreviewBar" class="btn-close-preview" type="button" title="Cerrar preescucha">âœ•</button>
             </div>
         </div>
 
-        <!-- ══════════════════════════════════════════════════════════════════
-             MODAL DE ADVERTENCIA DE CANCIONES SIMILARES (COMPARACIÓN VISUAL)
-             ══════════════════════════════════════════════════════════════════ -->
+        <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+             MODAL DE ADVERTENCIA DE CANCIONES SIMILARES (COMPARACIÃ“N VISUAL)
+             â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
         <div id="similarityModal" class="modal-overlay hide">
             <div class="modal-box">
                 <div class="modal-header" style="justify-content: space-between;">
                     <div style="display: flex; align-items: center; gap: 0.6rem;">
-                        <span>⚠️</span>
-                        <span>Canción con Nombre Similar Detectada</span>
+                        <span>âš ï¸</span>
+                        <span>CanciÃ³n con Nombre Similar Detectada</span>
                     </div>
-                    <button id="btnModalCloseCross" type="button" style="background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; padding: 2px 6px;" title="Cerrar ventana">✕</button>
+                    <button id="btnModalCloseCross" type="button" style="background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; padding: 2px 6px;" title="Cerrar ventana">âœ•</button>
                 </div>
                 <p style="font-size: 0.9rem; color: #ddd;">
-                    Se encontró una canción en tu perfil con un nombre similar. Compara ambas antes de continuar:
+                    Se encontrÃ³ una canciÃ³n en tu perfil con un nombre similar. Compara ambas antes de continuar:
                 </p>
 
                 <div class="comparison-table">
-                    <!-- Datos de la canción que vas a subir -->
+                    <!-- Datos de la canciÃ³n que vas a subir -->
                     <div class="compare-row new">
-                        <div class="compare-badge">Canción que vas a subir</div>
+                        <div class="compare-badge">CanciÃ³n que vas a subir</div>
                         <div style="font-weight: 600; color: #fff;" id="modalNewTitle"></div>
                         <div style="font-size: 0.8rem; color: var(--text-muted);">
-                            Álbum destino: <span id="modalNewAlbum" style="color: var(--primary);"></span>
+                            Ãlbum destino: <span id="modalNewAlbum" style="color: var(--primary);"></span>
                         </div>
                     </div>
 
-                    <!-- Datos de la canción que ya tienes en el chat -->
+                    <!-- Datos de la canciÃ³n que ya tienes en el chat -->
                     <div class="compare-row existing">
                         <div class="compare-badge">Ya existente en tu perfil</div>
                         <div style="font-weight: 600; color: #fff;" id="modalExistingTitle"></div>
                         <div style="font-size: 0.8rem; color: var(--text-muted);">
-                            Álbum actual: <span id="modalExistingAlbum" style="color: var(--warning);"></span>
+                            Ãlbum actual: <span id="modalExistingAlbum" style="color: var(--warning);"></span>
                         </div>
                         <div id="modalAudioCompareWrap" style="margin-top: 6px;">
                             <button id="btnModalPlayExisting" class="btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" type="button">
-                                ▶ Escuchar la que ya tienes
+                                â–¶ Escuchar la que ya tienes
                             </button>
                         </div>
                     </div>
@@ -315,12 +315,12 @@
                     <label for="modalRenameInput" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">
                         Modifica el nombre para diferenciarla en tu perfil:
                     </label>
-                    <input id="modalRenameInput" type="text" style="width: 100%; padding: 0.5rem 0.8rem; font-size: 0.88rem;" placeholder="Nuevo nombre para la canción">
+                    <input id="modalRenameInput" type="text" style="width: 100%; padding: 0.5rem 0.8rem; font-size: 0.88rem;" placeholder="Nuevo nombre para la canciÃ³n">
                 </div>
 
                 <!-- Estado de Progreso de Subida dentro del Modal -->
                 <div id="modalLoadingState" class="hide" style="text-align: center; padding: 1.5rem; background: rgba(0,0,0,0.25); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);">
-                    <div style="font-size: 2rem; margin-bottom: 0.5rem; animation: pulse 1.5s infinite;">⏳</div>
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem; animation: pulse 1.5s infinite;">â³</div>
                     <div id="modalLoadingText" style="font-weight: 600; font-size: 1.05rem; color: var(--primary); margin-bottom: 0.3rem;">
                         Descargando de YouTube y transcodificando a MP3...
                     </div>
@@ -338,11 +338,12 @@
         </div>
     </div>
 
-    <!-- Scripts de Supabase y Utilidades Compartidas del Chat con cache-busting v1.8.5 -->
+    <!-- Scripts de Supabase y Utilidades Compartidas del Chat con cache-busting v1.8.6 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/js/config.js?v=1.8.5"></script>
-    <script src="/js/media-api.js?v=1.8.5"></script>
-    <script src="/js/auth.js?v=1.8.5"></script>
-    <script src="app.js?v=1.8.5"></script>
+    <script src="/js/config.js?v=1.8.6"></script>
+    <script src="/js/media-api.js?v=1.8.6"></script>
+    <script src="/js/auth.js?v=1.8.6"></script>
+    <script src="app.js?v=1.8.6"></script>
 </body>
 </html>
+

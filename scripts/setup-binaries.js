@@ -68,14 +68,15 @@ async function setup() {
             console.log('[Setup Binaries] Configurando ejecutables para Linux (Render.com)...');
 
             const ytdlpPath = path.join(BIN_DIR, 'yt-dlp');
-            if (!fs.existsSync(ytdlpPath)) {
-                console.log('[Setup Binaries] Descargando binario yt-dlp Linux...');
+            console.log('[Setup Binaries] Descargando la versión más reciente de yt-dlp Linux...');
+            try {
+                if (fs.existsSync(ytdlpPath)) fs.unlinkSync(ytdlpPath);
                 await downloadFile('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp', ytdlpPath);
                 fs.chmodSync(ytdlpPath, 0o755);
-                console.log('[Setup Binaries] yt-dlp Linux descargado y marcado como ejecutable.');
-            } else {
-                fs.chmodSync(ytdlpPath, 0o755);
-                console.log('[Setup Binaries] yt-dlp Linux ya existe.');
+                console.log('[Setup Binaries] yt-dlp Linux actualizado y marcado como ejecutable.');
+            } catch (dlErr) {
+                console.warn('[Setup Binaries] Advertencia al descargar yt-dlp más reciente:', dlErr.message);
+                if (fs.existsSync(ytdlpPath)) fs.chmodSync(ytdlpPath, 0o755);
             }
 
             const ffmpegPath = path.join(BIN_DIR, 'ffmpeg');

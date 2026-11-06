@@ -1,20 +1,20 @@
-﻿/**
+/**
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * VersiÃ³n: 1.8.5
- * DescripciÃ³n: Servidor Express optimizado y enfocado en YouTube:
+ * VersiÃƒÂ³n: 1.8.5
+ * DescripciÃƒÂ³n: Servidor Express optimizado y enfocado en YouTube:
  *              - Soporte de certificados SSL universales (--no-check-certificates)
- *              - PrevenciÃ³n de bloqueos por validaciÃ³n de certificado en Windows/Linux
- *              - Descarga y transcodificaciÃ³n acelerada con Node runtime y rotaciÃ³n de clientes
- *              - BÃºsqueda extendida en YouTube (hasta 50 resultados por consulta)
- *              - Barra interactiva de previsualizaciÃ³n y pre-escucha antes de descargar
- *              - Pipeline de conversiÃ³n YouTube a MP3 de alta fidelidad (yt-dlp + FFmpeg)
+ *              - PrevenciÃƒÂ³n de bloqueos por validaciÃƒÂ³n de certificado en Windows/Linux
+ *              - Descarga y transcodificaciÃƒÂ³n acelerada con Node runtime y rotaciÃƒÂ³n de clientes
+ *              - BÃƒÂºsqueda extendida en YouTube (hasta 50 resultados por consulta)
+ *              - Barra interactiva de previsualizaciÃƒÂ³n y pre-escucha antes de descargar
+ *              - Pipeline de conversiÃƒÂ³n YouTube a MP3 de alta fidelidad (yt-dlp + FFmpeg)
  *              - Soporte nativo de JS runtime (--js-runtimes node) para n-tokens
- *              - Reintentos automÃ¡ticos con rotaciÃ³n de clientes contra HTTP 403 Forbidden
- *              - DeduplicaciÃ³n por hash SHA-256 en Cloudflare R2 y gestiÃ³n de Ã¡lbumes
+ *              - Reintentos automÃƒÂ¡ticos con rotaciÃƒÂ³n de clientes contra HTTP 403 Forbidden
+ *              - DeduplicaciÃƒÂ³n por hash SHA-256 en Cloudflare R2 y gestiÃƒÂ³n de ÃƒÂ¡lbumes
  *              - Soporte multiplataforma nativo (Windows y Linux para Render.com)
- *              - PrevenciÃ³n y manejo amigable de errores de puerto ocupado (EADDRINUSE)
+ *              - PrevenciÃƒÂ³n y manejo amigable de errores de puerto ocupado (EADDRINUSE)
  * ============================================================================
  */
 
@@ -27,14 +27,14 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const https = require('https');
 
-// â”€â”€â”€ Fix SSL para fetch nativo en Node 24 con certificados intermedios en Windows â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Fix SSL para fetch nativo en Node 24 con certificados intermedios en Windows Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // Permite que fetch() y https.request() acepten certificados autofirmados/intermedios
-// sin exponer NODE_TLS_REJECT_UNAUTHORIZED=0 de forma global (sÃ³lo agente https)
+// sin exponer NODE_TLS_REJECT_UNAUTHORIZED=0 de forma global (sÃƒÂ³lo agente https)
 const insecureAgent = new https.Agent({ rejectUnauthorized: false });
 
 /**
- * fetchInsecure â€” igual que fetch() pero con rejectUnauthorized:false
- * Usar sÃ³lo para llamadas internas a Cloudflare Workers / Supabase en entorno local Windows.
+ * fetchInsecure Ã¢â‚¬â€ igual que fetch() pero con rejectUnauthorized:false
+ * Usar sÃƒÂ³lo para llamadas internas a Cloudflare Workers / Supabase en entorno local Windows.
  */
 function fetchInsecure(url, options = {}) {
     return fetch(url, { ...options, agent: insecureAgent });
@@ -43,7 +43,7 @@ function fetchInsecure(url, options = {}) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ConfiguraciÃ³n de Supabase y Media API (Cloudflare Worker R2)
+// ConfiguraciÃƒÂ³n de Supabase y Media API (Cloudflare Worker R2)
 const SUPABASE_URL = "https://avdklsfhaoznpzqlxapc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2ZGtsc2ZoYW96bnB6cWx4YXBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4OTc2MTgsImV4cCI6MjEwOTQ3MzYxOH0.8piH_mC0qvfyka3Vrcc00Ij6DLSZxPFRuwkg5HkX9-Y";
 const MEDIA_API_URL = "https://chat-media.latamdia4.workers.dev";
@@ -73,12 +73,12 @@ app.use(express.urlencoded({ extended: true }));
 // Confiar en cabeceras de proxy inverso (necesario en Render para HTTPS correcto)
 app.enable('trust proxy');
 
-// Servir frontend y recursos estÃ¡ticos
+// Servir frontend y recursos estÃƒÂ¡ticos
 app.use(express.static(path.join(ROOT_DIR, 'public')));
 app.use('/js', express.static(path.join(ROOT_DIR, 'js')));
 
 /**
- * FunciÃ³n auxiliar para limpiar nombres de archivo de caracteres no permitidos
+ * FunciÃƒÂ³n auxiliar para limpiar nombres de archivo de caracteres no permitidos
  */
 function sanitizeFileName(name) {
     if (!name) return 'cancion';
@@ -89,12 +89,12 @@ function sanitizeFileName(name) {
 }
 
 /**
- * FunciÃ³n de pausa asÃ­ncrona para retroceso exponencial en reintentos
+ * FunciÃƒÂ³n de pausa asÃƒÂ­ncrona para retroceso exponencial en reintentos
  */
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Ejecutar procesos de forma asÃ­ncrona mediante promesas
+ * Ejecutar procesos de forma asÃƒÂ­ncrona mediante promesas
  */
 function runProcess(cmdPath, args) {
     return new Promise((resolve, reject) => {
@@ -109,7 +109,7 @@ function runProcess(cmdPath, args) {
             if (code === 0) {
                 resolve({ stdout, stderr });
             } else {
-                reject(new Error(`El proceso fallÃ³ con cÃ³digo ${code}: ${stderr || stdout}`));
+                reject(new Error(`El proceso fallÃƒÂ³ con cÃƒÂ³digo ${code}: ${stderr || stdout}`));
             }
         });
 
@@ -130,9 +130,83 @@ function formatDuration(seconds) {
     return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s}` : `${m}:${s}`;
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// ENDPOINTS DE YOUTUBE (BÃšSQUEDA EXTENDIDA, ANÃLISIS, CONVERSIÃ“N)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// â”€â”€â”€ Soporte de Cookies y Proxy de YouTube (ProtecciÃ³n Anti-Bot y Anti-429 en Render/VPS) â”€â”€â”€
+const COOKIES_FILE = path.join(ROOT_DIR, 'cookies.txt');
+const TEMP_COOKIES_FILE = path.join(TEMP_DIR, 'yt_cookies.txt');
+
+/**
+ * Resuelve la ruta al archivo de cookies de YouTube si existe:
+ * 1. Archivo fÃ­sico cookies.txt en la raÃ­z del proyecto
+ * 2. Variable de entorno YOUTUBE_COOKIES (o COOKIES_CONTENT / YT_COOKIES)
+ * 3. Variable de entorno YOUTUBE_COOKIES_BASE64 (base64 sin saltos de lÃ­nea rotos)
+ */
+function resolveCookiesPath() {
+    if (fs.existsSync(COOKIES_FILE) && fs.statSync(COOKIES_FILE).size > 10) {
+        return COOKIES_FILE;
+    }
+    const rawCookies = process.env.YOUTUBE_COOKIES || process.env.COOKIES_CONTENT || process.env.YT_COOKIES;
+    if (rawCookies && rawCookies.trim().length > 10) {
+        try {
+            fs.writeFileSync(TEMP_COOKIES_FILE, rawCookies.trim(), 'utf8');
+            return TEMP_COOKIES_FILE;
+        } catch (e) {
+            console.warn('[Cookies] Error escribiendo TEMP_COOKIES_FILE:', e.message);
+        }
+    }
+    if (process.env.YOUTUBE_COOKIES_BASE64 && process.env.YOUTUBE_COOKIES_BASE64.trim().length > 10) {
+        try {
+            const decoded = Buffer.from(process.env.YOUTUBE_COOKIES_BASE64.trim(), 'base64').toString('utf8');
+            fs.writeFileSync(TEMP_COOKIES_FILE, decoded, 'utf8');
+            return TEMP_COOKIES_FILE;
+        } catch (e) {
+            console.warn('[Cookies] Error decodificando YOUTUBE_COOKIES_BASE64:', e.message);
+        }
+    }
+    return null;
+}
+
+/**
+ * Genera el arreglo base de argumentos para yt-dlp con bypass de certificados SSL,
+ * soporte de JavaScript runtime, cookies automÃ¡ticas y cliente seleccionado.
+ */
+function buildBaseYtDlpArgs(clientStrategy, extraArgs = []) {
+    const args = [
+        '--no-check-certificates',
+        '--js-runtimes', 'node'
+    ];
+
+    if (clientStrategy) {
+        args.push('--extractor-args', clientStrategy);
+    }
+
+    const cookiesPath = resolveCookiesPath();
+    if (cookiesPath) {
+        args.push('--cookies', cookiesPath);
+    }
+
+    const proxy = process.env.YOUTUBE_PROXY || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+    if (proxy && proxy.trim()) {
+        args.push('--proxy', proxy.trim());
+    }
+
+    return args.concat(extraArgs);
+}
+
+/**
+ * Formatea errores comunes de YouTube (como HTTP 429 Too Many Requests y Bot Detection)
+ * para que el usuario reciba una explicaciÃ³n clara y la soluciÃ³n directa en Render.
+ */
+function formatYtDlpError(rawError) {
+    const msg = String(rawError || '');
+    if (msg.includes('429') || msg.includes('Too Many Requests') || msg.includes('Sign in to confirm youâ€™re not a bot') || msg.includes('bot')) {
+        return 'YouTube bloqueÃ³ temporalmente la IP del servidor en la nube (Error 429: Bot Detection). Para solucionarlo en Render: ve a tu panel de Render -> Environment -> aÃ±ade la variable "YOUTUBE_COOKIES" pegando el texto de tu cookies.txt de YouTube (exportado con la extensiÃ³n "Get cookies.txt LOCALLY").';
+    }
+    return msg;
+}
+
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ENDPOINTS DE YOUTUBE (BÃƒÅ¡SQUEDA EXTENDIDA, ANÃƒÂLISIS, CONVERSIÃƒâ€œN)
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 /**
  * Endpoint: POST /api/youtube-search
@@ -147,25 +221,23 @@ app.post('/api/youtube-search', async (req, res) => {
 
     const count = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50);
     const clientOptions = [
-        'youtube:player_client=android,web',
-        'youtube:player_client=web,android',
-        'youtube:player_client=mweb'
+        'youtube:player_client=visionos,android_vr',
+        'youtube:player_client=android_vr,visionos',
+        'youtube:player_client=ios,android',
+        'youtube:player_client=android,web'
     ];
 
     let lastError = null;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= clientOptions.length; attempt++) {
         try {
-            const clientArg = clientOptions[attempt - 1] || clientOptions[0];
-            const args = [
-                '--no-check-certificates',
-                '--js-runtimes', 'node',
-                '--extractor-args', clientArg,
+            const clientArg = clientOptions[attempt - 1];
+            const args = buildBaseYtDlpArgs(clientArg, [
                 `ytsearch${count}:${query.trim()}`,
                 '--dump-single-json',
                 '--no-warnings',
                 '--skip-download',
                 '--flat-playlist'
-            ];
+            ]);
 
             const { stdout } = await runProcess(YTDLP_BIN, args);
             const data = JSON.parse(stdout);
@@ -192,18 +264,18 @@ app.post('/api/youtube-search', async (req, res) => {
         } catch (err) {
             lastError = err;
             console.warn(`[YouTube Search] Intento ${attempt} fallÃ³ para "${query}": ${err.message}. Reintentando...`);
-            if (attempt < 3) await sleep(1200 * attempt);
+            if (attempt < clientOptions.length) await sleep(1000 * attempt);
         }
     }
 
     return res.status(500).json({
-        error: `Error al buscar en YouTube tras 3 intentos: ${lastError ? lastError.message : 'Error desconocido'}`
+        error: `Error al buscar en YouTube: ${formatYtDlpError(lastError ? lastError.message : 'Error desconocido')}`
     });
 });
 
 /**
  * Endpoint: POST /api/playlist-info
- * Detecta y extrae todas las canciones de una lista de reproducciÃ³n (Playlist) de YouTube
+ * Detecta y extrae todas las canciones de una lista de reproducciÃƒÂ³n (Playlist) de YouTube
  */
 app.post('/api/playlist-info', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
@@ -213,16 +285,13 @@ app.post('/api/playlist-info', async (req, res) => {
     }
 
     try {
-        const args = [
-            '--no-check-certificates',
-            '--js-runtimes', 'node',
-            '--extractor-args', 'youtube:player_client=android,web',
+        const args = buildBaseYtDlpArgs('youtube:player_client=visionos,android_vr', [
             '--dump-single-json',
             '--no-warnings',
             '--flat-playlist',
             '--skip-download',
             url.trim()
-        ];
+        ]);
 
         const { stdout } = await runProcess(YTDLP_BIN, args);
         const data = JSON.parse(stdout);
@@ -258,7 +327,7 @@ app.post('/api/playlist-info', async (req, res) => {
         });
     } catch (err) {
         console.error('Error al obtener playlist:', err);
-        return res.status(500).json({ error: 'No se pudo leer la lista de reproducciÃ³n. Verifica que sea pÃºblica.' });
+        return res.status(500).json({ error: `No se pudo leer la lista de reproducciÃ³n: ${formatYtDlpError(err.message)}` });
     }
 });
 
@@ -274,25 +343,23 @@ app.post('/api/video-info', async (req, res) => {
     }
 
     const clientOptions = [
-        'youtube:player_client=android,web',
-        'youtube:player_client=web,android',
-        'youtube:player_client=mweb'
+        'youtube:player_client=visionos,android_vr',
+        'youtube:player_client=android_vr,visionos',
+        'youtube:player_client=ios,android',
+        'youtube:player_client=android,web'
     ];
 
     let lastError = null;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= clientOptions.length; attempt++) {
         try {
-            const clientArg = clientOptions[attempt - 1] || clientOptions[0];
-            const args = [
-                '--no-check-certificates',
-                '--js-runtimes', 'node',
-                '--extractor-args', clientArg,
+            const clientArg = clientOptions[attempt - 1];
+            const args = buildBaseYtDlpArgs(clientArg, [
                 '--dump-single-json',
                 '--no-warnings',
                 '--no-playlist',
                 '--skip-download',
                 url.trim()
-            ];
+            ]);
 
             const { stdout } = await runProcess(YTDLP_BIN, args);
             const data = JSON.parse(stdout);
@@ -309,54 +376,54 @@ app.post('/api/video-info', async (req, res) => {
         } catch (err) {
             lastError = err;
             console.warn(`[Video Info] Intento ${attempt} fallÃ³ para "${url}": ${err.message}`);
-            if (attempt < 3) await sleep(1200 * attempt);
+            if (attempt < clientOptions.length) await sleep(1000 * attempt);
         }
     }
 
     return res.status(500).json({
-        error: `No se pudo obtener la informaciÃ³n del video tras 3 intentos: ${lastError ? lastError.message : 'Error desconocido'}`
+        error: `No se pudo obtener la informaciÃ³n del video: ${formatYtDlpError(lastError ? lastError.message : 'Error desconocido')}`
     });
 });
 
 /**
  * Endpoint: POST /api/convert-and-upload
- * Orquesta la descarga de audio de YouTube con REINTENTOS AUTOMÃTICOS ante errores 403 Forbidden,
- * transcodificaciÃ³n a MP3, hash SHA-256, subida a R2 y registro en Supabase.
+ * Orquesta la descarga de audio de YouTube con REINTENTOS AUTOMÃƒÂTICOS ante errores 403 Forbidden,
+ * transcodificaciÃƒÂ³n a MP3, hash SHA-256, subida a R2 y registro en Supabase.
  */
 app.post('/api/convert-and-upload', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const { url, album, customTitle, accessToken, userId } = req.body;
 
     if (!url || !accessToken || !userId) {
-        return res.status(400).json({ error: 'Faltan parÃ¡metros requeridos (url, accessToken, userId).' });
+        return res.status(400).json({ error: 'Faltan parÃƒÂ¡metros requeridos (url, accessToken, userId).' });
     }
 
     const tempId = crypto.randomUUID();
     const tempFileTemplate = path.join(TEMP_DIR, `${tempId}.%(ext)s`);
     const expectedMp3Path = path.join(TEMP_DIR, `${tempId}.mp3`);
 
+        // Estrategias de cliente ordenadas por resiliencia contra bot-check (visionos y android_vr no activan bot-checks en VPS)
     const clientStrategies = [
+        'youtube:player_client=visionos,android_vr',
+        'youtube:player_client=android_vr,visionos',
+        'youtube:player_client=ios,android',
         'youtube:player_client=android,web',
-        'youtube:player_client=web,android',
-        'youtube:player_client=mweb'
+        'youtube:player_client=mweb,web'
     ];
 
     try {
-        console.log(`[YouTube Convert] Iniciando pipeline de conversiÃ³n para: ${url}`);
+        console.log(`[YouTube Convert] Iniciando pipeline de conversión para: ${url}`);
 
         let downloadSuccess = false;
         let lastDownloadError = null;
 
-        // BUCLE DE REINTENTOS AUTOMÃTICOS
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        // BUCLE DE REINTENTOS CON ROTACIÓN DE CLIENTES
+        for (let attempt = 1; attempt <= clientStrategies.length; attempt++) {
             try {
-                const clientArg = clientStrategies[attempt - 1] || clientStrategies[0];
-                console.log(`[YouTube Convert] Intento ${attempt}/3 usando estrategia: ${clientArg}`);
+                const clientArg = clientStrategies[attempt - 1];
+                console.log(`[YouTube Convert] Intento ${attempt}/${clientStrategies.length} usando estrategia: ${clientArg}`);
 
-                const ytdlArgs = [
-                    '--no-check-certificates',
-                    '--js-runtimes', 'node',
-                    '--extractor-args', clientArg,
+                const ytdlArgs = buildBaseYtDlpArgs(clientArg, [
                     '--retries', '3',
                     '--fragment-retries', '3',
                     '--ffmpeg-location', FFMPEG_BIN,
@@ -366,13 +433,13 @@ app.post('/api/convert-and-upload', async (req, res) => {
                     '-o', tempFileTemplate,
                     '--no-playlist',
                     url.trim()
-                ];
+                ]);
 
                 await runProcess(YTDLP_BIN, ytdlArgs);
 
                 if (fs.existsSync(expectedMp3Path)) {
                     downloadSuccess = true;
-                    console.log(`[YouTube Convert] Descarga y transcodificaciÃ³n completadas en el intento ${attempt}.`);
+                    console.log(`[YouTube Convert] Descarga y transcodificación completadas en el intento ${attempt}.`);
                     break;
                 }
             } catch (dlErr) {
@@ -381,19 +448,20 @@ app.post('/api/convert-and-upload', async (req, res) => {
                 if (fs.existsSync(expectedMp3Path)) {
                     try { fs.unlinkSync(expectedMp3Path); } catch (e) {}
                 }
-                if (attempt < 3) {
-                    await sleep(1500 * attempt);
+                if (attempt < clientStrategies.length) {
+                    await sleep(1200 * attempt);
                 }
             }
         }
 
         if (!downloadSuccess || !fs.existsSync(expectedMp3Path)) {
-            throw new Error(`No se pudo descargar el audio tras 3 intentos automÃ¡ticos: ${lastDownloadError ? lastDownloadError.message : 'Error 403 Forbidden o restricciÃ³n'}`);
+            const friendlyErr = formatYtDlpError(lastDownloadError ? lastDownloadError.message : 'Error desconocido');
+            throw new Error(`No se pudo descargar el audio tras ${clientStrategies.length} intentos: ${friendlyErr}`);
         }
 
         const mp3Buffer = fs.readFileSync(expectedMp3Path);
 
-        // 2. Calcular SHA-256 del archivo de audio para deduplicaciÃ³n
+        // 2. Calcular SHA-256 del archivo de audio para deduplicaciÃƒÂ³n
         const fileHash = crypto.createHash('sha256').update(mp3Buffer).digest('hex');
         console.log(`[YouTube Convert] Hash SHA-256 calculado: ${fileHash}`);
 
@@ -403,7 +471,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
             displayName = `YouTube_${Date.now()}`;
         }
 
-        // 4. DeduplicaciÃ³n por hash: llamar RPC find_active_track_by_hash en Supabase
+        // 4. DeduplicaciÃƒÂ³n por hash: llamar RPC find_active_track_by_hash en Supabase
         let fileName = null;
         try {
             const rpcRes = await fetchInsecure(`${SUPABASE_URL}/rest/v1/rpc/find_active_track_by_hash`, {
@@ -424,7 +492,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
                 }
             }
         } catch (rpcErr) {
-            console.warn('[YouTube Convert] Aviso en verificaciÃ³n de RPC de hash:', rpcErr);
+            console.warn('[YouTube Convert] Aviso en verificaciÃƒÂ³n de RPC de hash:', rpcErr);
         }
 
         // 5. Si no existe previamente en R2, subir el MP3 a Cloudflare R2 Worker con reintentos
@@ -452,7 +520,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
                         break;
                     }
                 } catch (upErr) {
-                    console.warn(`[YouTube Convert] Intento de subida a R2 ${upAttempt} fallÃ³:`, upErr);
+                    console.warn(`[YouTube Convert] Intento de subida a R2 ${upAttempt} fallÃƒÂ³:`, upErr);
                     if (upAttempt < 3) await sleep(1000 * upAttempt);
                 }
             }
@@ -497,7 +565,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
         return res.json({
             success: true,
             track: createdTrack,
-            message: `CanciÃ³n "${displayName}" convertida y agregada a tu perfil exitosamente.`
+            message: `CanciÃƒÂ³n "${displayName}" convertida y agregada a tu perfil exitosamente.`
         });
 
     } catch (err) {
@@ -523,21 +591,23 @@ app.use((req, res) => {
 
 // Inicializar el servidor en 0.0.0.0 con captura de error EADDRINUSE amigable
 const server = app.listen(PORT, '0.0.0.0', () => {
+    const cookiesResolved = resolveCookiesPath();
     console.log(`=======================================================`);
-    console.log(` Servidor Conversor de YouTube a MP3 v1.8.0 activo:`);
+    console.log(` Servidor Conversor de YouTube a MP3 v1.8.6 activo:`);
     console.log(` Local:      http://localhost:${PORT}`);
     console.log(` Plataforma activa: ${process.platform} (${process.arch})`);
     console.log(` yt-dlp:     ${YTDLP_BIN}`);
     console.log(` ffmpeg:     ${FFMPEG_BIN}`);
     console.log(` Supabase:   ${SUPABASE_URL}`);
     console.log(` Media API:  ${MEDIA_API_URL}`);
+    console.log(` Cookies YT: ${cookiesResolved ? 'Detectadas y activas' : 'No configuradas (Modo visión bypass)'}`);
     console.log(`=======================================================`);
 });
 
 server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-        console.error(`\n[ERROR CRÃTICO] El puerto ${PORT} ya estÃ¡ en uso.`);
-        console.error(`Si tienes otra terminal abierta corriendo el servidor, ciÃ©rrala.`);
+        console.error(`\n[ERROR CRÃƒÂTICO] El puerto ${PORT} ya estÃƒÂ¡ en uso.`);
+        console.error(`Si tienes otra terminal abierta corriendo el servidor, ciÃƒÂ©rrala.`);
         console.error(`O para liberar el puerto en PowerShell, ejecuta:`);
         console.error(`Stop-Process -Name node -Force\n`);
         process.exit(1);
@@ -545,4 +615,5 @@ server.on('error', (err) => {
         console.error('[ERROR]', err);
     }
 });
+
 

@@ -886,6 +886,9 @@ async function executeUpload(url, customTitle, album) {
 
     } catch (err) {
         logEvent(`✘ Error en el proceso: ${err.message}`, 'error');
+        if (err.message && (err.message.includes('429') || err.message.includes('bot') || err.message.includes('YOUTUBE_COOKIES') || err.message.includes('Sign in'))) {
+            logEvent(`💡 Tip para Render: Agrega la variable de entorno YOUTUBE_COOKIES en tu panel de Render con tus cookies de YouTube (exportadas con "Get cookies.txt LOCALLY").`, 'warn');
+        }
         throw err;
     } finally {
         resetConvertButtonState();

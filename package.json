@@ -1,6 +1,6 @@
 {
   "name": "youtube-to-mp3-supabase-chat",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "description": "Conversor de YouTube a MP3 de alta fidelidad para Supabase Chat: búsqueda extendida interactiva, pre-escucha con reproductor flotante, deduplicación SHA-256 en Cloudflare R2, gestión de álbumes idéntica al chat y despliegue automatizado en Render.com",
   "main": "server.js",
   "scripts": {
