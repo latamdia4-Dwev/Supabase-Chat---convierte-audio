@@ -2,12 +2,12 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.8.4
+ * Versión: 1.8.5
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
- *              - Tarjeta inline inamovible de comparación de duplicados (erradicación de bugs de modales flotantes)
- *              - Panel de progreso interactivo y detección amigable de límite de 500 MB en Cloudflare
- *              - Cache-busting estricto (?v=1.8.4) en todos los recursos estáticos
- *              - Soporte SSL universal (--no-check-certificates) en backend para descargas veloces
+ *              - Resaltado visual interactivo y badge animado en la canción de YouTube en reproducción
+ *              - Tarjeta inline inamovible de comparación de duplicados
+ *              - Sincronización en tiempo real del reproductor previo y resultados de búsqueda
+ *              - Cache-busting estricto (?v=1.8.5) y soporte SSL universal en backend
  * ============================================================================
  */
 
@@ -21,6 +21,7 @@ let cachedUsernames = null;
 let myTracksCache = [];
 let collapsedAlbums = new Set();
 let currentLoadedVideoId = null;
+let currentPlayingVideoId = null;
 const bypassedSimilarityTitles = new Set();
 
 /**
@@ -272,24 +273,75 @@ $('tabModeDirect').onclick = () => {
 };
 
 // ══════════════════════════════════════════════════════════════════════
-// 3. BARRA DE PRE-ESCUCHA INTERACTIVA (PREVIEW PLAYER)
+// 3. BARRA DE PRE-ESCUCHA INTERACTIVA Y RESALTADO DE PISTA ACTIVA
 // ══════════════════════════════════════════════════════════════════════
+
+function updatePlayingPreviewHighlight() {
+    const rows = document.querySelectorAll('.search-item');
+    rows.forEach(row => {
+        const rowVid = row.dataset.videoId;
+        const listenBtn = row.querySelector('.search-btn-listen');
+        const infoEl = row.querySelector('.search-info');
+        const titleEl = row.querySelector('.search-title');
+        let badge = row.querySelector('.playing-indicator-badge');
+
+        if (currentPlayingVideoId && rowVid === currentPlayingVideoId) {
+            row.classList.add('playing-now');
+            if (listenBtn) {
+                listenBtn.innerHTML = '🔊 Sonando';
+            }
+            if (!badge && titleEl) {
+                badge = document.createElement('span');
+                badge.className = 'playing-indicator-badge';
+                badge.innerHTML = '▶ Sonando';
+                titleEl.appendChild(badge);
+            }
+        } else {
+            row.classList.remove('playing-now');
+            if (listenBtn) {
+                listenBtn.innerHTML = '▶ Probar';
+            }
+            if (badge) {
+                badge.remove();
+            }
+        }
+    });
+
+    const previewBtn = $('btnPreviewCurrentVideo');
+    if (previewBtn) {
+        if (currentPlayingVideoId && currentLoadedVideoId === currentPlayingVideoId) {
+            previewBtn.innerHTML = '🔊 Sonando ahora';
+            previewBtn.style.borderColor = 'var(--primary)';
+            previewBtn.style.color = 'var(--primary)';
+        } else {
+            previewBtn.innerHTML = '▶ Escuchar previo';
+            previewBtn.style.borderColor = '';
+            previewBtn.style.color = '';
+        }
+    }
+}
 
 function playPreview(videoId, title) {
     if (!videoId) return;
+    currentPlayingVideoId = videoId;
     const bar = $('previewFixedBar');
     const wrap = $('previewIframeWrap');
 
     $('previewBarTitle').textContent = title || 'Vista previa';
     wrap.innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1" allow="autoplay" title="Vista previa"></iframe>`;
     bar.classList.remove('hide');
+
+    updatePlayingPreviewHighlight();
 }
 
 function closePreview() {
+    currentPlayingVideoId = null;
     const bar = $('previewFixedBar');
     const wrap = $('previewIframeWrap');
     wrap.innerHTML = '';
     bar.classList.add('hide');
+
+    updatePlayingPreviewHighlight();
 }
 
 $('btnClosePreviewBar').onclick = closePreview;
@@ -332,6 +384,8 @@ async function searchYouTube() {
         data.results.forEach(item => {
             const row = document.createElement('div');
             row.className = 'search-item';
+            row.dataset.videoId = item.id;
+            row.id = `yt-track-${item.id}`;
 
             const img = document.createElement('img');
             img.className = 'search-thumb';
@@ -360,10 +414,14 @@ async function searchYouTube() {
             const listenBtn = document.createElement('button');
             listenBtn.type = 'button';
             listenBtn.className = 'search-btn-listen';
-            listenBtn.textContent = '▶ Probar';
+            listenBtn.textContent = (currentPlayingVideoId === item.id) ? '🔊 Sonando' : '▶ Probar';
             listenBtn.title = 'Escuchar vista previa antes de convertir';
             listenBtn.onclick = () => {
-                playPreview(item.id, item.title);
+                if (currentPlayingVideoId === item.id) {
+                    closePreview();
+                } else {
+                    playPreview(item.id, item.title);
+                }
             };
 
             // Botón de Selección para personalizar título o álbum antes de convertir
@@ -385,6 +443,7 @@ async function searchYouTube() {
 
                 logEvent(`Seleccionado: "${item.title}" (${item.durationString})`, 'info');
                 $('trackConfigSection').scrollIntoView({ behavior: 'smooth' });
+                updatePlayingPreviewHighlight();
             };
 
             // Botón de Conversión Rápida de un Solo Clic
@@ -408,6 +467,7 @@ async function searchYouTube() {
 
                 logEvent(`Procesando de inmediato: "${item.title}"`, 'info');
                 $('btnConvertAndUpload').click();
+                updatePlayingPreviewHighlight();
             };
 
             actions.appendChild(listenBtn);
@@ -419,6 +479,9 @@ async function searchYouTube() {
             row.appendChild(actions);
             resultsGrid.appendChild(row);
         });
+
+        // Aplicar estado de reproducción actual si alguna pista ya sonaba
+        updatePlayingPreviewHighlight();
 
     } catch (err) {
         resultsGrid.innerHTML = `<div style="color: var(--danger); padding: 0.8rem; font-size: 0.88rem;">${err.message}</div>`;

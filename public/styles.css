@@ -437,6 +437,47 @@ button:disabled {
     background-color: #212634;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   RESALTADO VISUAL ACTIVO DE LA CANCIÓN EN REPRODUCCIÓN (PREVIEW)
+   ══════════════════════════════════════════════════════════════════ */
+.search-item.playing-now {
+    background: rgba(62, 207, 142, 0.12) !important;
+    border-color: #3ecf8e !important;
+    box-shadow: 0 0 16px rgba(62, 207, 142, 0.35), inset 0 0 8px rgba(62, 207, 142, 0.12);
+    transform: translateY(-1px);
+}
+
+.search-item.playing-now .search-title {
+    color: #3ecf8e !important;
+    font-weight: 700;
+}
+
+.search-item.playing-now .search-btn-listen {
+    background: #10b981 !important;
+    color: #ffffff !important;
+    border-color: #3ecf8e !important;
+    font-weight: 700;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+    animation: pulse 1.8s infinite;
+}
+
+.playing-indicator-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(62, 207, 142, 0.2);
+    color: #3ecf8e;
+    border: 1px solid rgba(62, 207, 142, 0.4);
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
 .search-thumb {
     width: 72px;
     height: 44px;

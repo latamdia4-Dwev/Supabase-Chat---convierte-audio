@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.8.4
+ * Versión: 1.8.5
  * Descripción: Servidor Express optimizado y enfocado en YouTube:
  *              - Soporte de certificados SSL universales (--no-check-certificates)
  *              - Prevención de bloqueos por validación de certificado en Windows/Linux
