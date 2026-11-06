@@ -2,15 +2,17 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.8.0
+ * Versión: 1.8.1
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
- *              - Login idéntico al chat con lista completa de usuarios en botón ▾ (sin invitados)
- *              - Búsqueda extendida en YouTube (15, 25, 40 resultados)
- *              - Barra interactiva de pre-escucha para verificar audio antes de subir
- *              - Soporte para enlaces directos y listas de reproducción (Playlists)
- *              - Detección de canciones similares con modal comparador visual
- *              - Grupos de álbumes y eliminación directa en Supabase
- *              - Prevención de errores de respuesta HTML (safeFetchJson)
+ *              - Prevención integral de bloqueos en botón de conversión y subida
+ *              - Botón de desbloqueo/restablecimiento manual de emergencia
+ *              - Modal interactivo de canciones similares con renombrado in-situ y cierre limpio
+ *              - Bypass de similitud aprobado por el usuario (sin bucles de advertencias repetitivas)
+ *              - Botón de conversión directa de un solo clic desde la lista de búsqueda
+ *              - Timeouts de red seguros con AbortController en safeFetchJson
+ *              - Recuperación automática ante expiración de sesión
+ *              - Login idéntico al chat con lista completa de usuarios en botón ▾
+ *              - Barra interactiva de pre-escucha y grupos de álbumes idénticos al chat
  * ============================================================================
  */
 
@@ -24,16 +26,27 @@ let cachedUsernames = null;
 let myTracksCache = [];
 let collapsedAlbums = new Set();
 let currentLoadedVideoId = null;
+const bypassedSimilarityTitles = new Set();
 
 /**
- * Función robusta para realizar fetch esperando JSON, evitando errores de 'Unexpected token <'
+ * Función robusta para realizar fetch con timeout y control de errores JSON/HTML
  */
-async function safeFetchJson(url, options = {}) {
+async function safeFetchJson(url, options = {}, timeoutMs = 180000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const fetchOptions = { ...options, signal: controller.signal };
+
     let res = null;
     try {
-        res = await fetch(url, options);
+        res = await fetch(url, fetchOptions);
     } catch (netErr) {
+        clearTimeout(timer);
+        if (netErr.name === 'AbortError') {
+            throw new Error(`La operación tardó demasiado tiempo (más de ${Math.round(timeoutMs / 1000)}s) y fue cancelada. Puedes reintentar.`);
+        }
         throw new Error('No se pudo comunicar con el servidor local. Verifica que la terminal tenga corriendo "npm start".');
+    } finally {
+        clearTimeout(timer);
     }
 
     const contentType = res.headers.get('content-type') || '';
@@ -51,6 +64,22 @@ async function safeFetchJson(url, options = {}) {
         } catch (parseErr) {
             throw new Error('El servidor devolvió una respuesta inesperada.');
         }
+    }
+}
+
+/**
+ * Restablecer de inmediato el botón de conversión a su estado activo
+ */
+function resetConvertButtonState() {
+    const btn = $('btnConvertAndUpload');
+    if (btn) {
+        btn.disabled = false;
+        $('convertBtnIcon').textContent = '⚡';
+        $('convertBtnText').textContent = 'Convertir a MP3 y Subir a mi Perfil';
+    }
+    const resetBtn = $('btnResetConvertState');
+    if (resetBtn) {
+        resetBtn.classList.add('hide');
     }
 }
 
@@ -342,12 +371,12 @@ async function searchYouTube() {
                 playPreview(item.id, item.title);
             };
 
-            // Botón de Selección
+            // Botón de Selección para personalizar título o álbum antes de convertir
             const selectBtn = document.createElement('button');
             selectBtn.type = 'button';
             selectBtn.className = 'search-btn-select';
             selectBtn.textContent = '✔ Elegir';
-            selectBtn.title = 'Seleccionar para convertir a MP3';
+            selectBtn.title = 'Seleccionar para ajustar nombre o álbum';
 
             selectBtn.onclick = () => {
                 currentLoadedVideoId = item.id;
@@ -363,8 +392,32 @@ async function searchYouTube() {
                 $('trackConfigSection').scrollIntoView({ behavior: 'smooth' });
             };
 
+            // Botón de Conversión Rápida de un Solo Clic
+            const convertDirectBtn = document.createElement('button');
+            convertDirectBtn.type = 'button';
+            convertDirectBtn.className = 'search-btn-select';
+            convertDirectBtn.style.background = '#10b981';
+            convertDirectBtn.style.color = '#fff';
+            convertDirectBtn.innerHTML = '⚡ Convertir';
+            convertDirectBtn.title = 'Convertir a MP3 y subir a mi perfil de inmediato';
+
+            convertDirectBtn.onclick = () => {
+                currentLoadedVideoId = item.id;
+                $('youtubeUrlInput').value = item.url;
+                $('customTitleInput').value = item.cleanTitle || item.title;
+
+                $('videoPreviewBox').classList.remove('hide');
+                $('videoThumbImg').src = item.thumbnail;
+                $('videoMetaTitle').textContent = item.title;
+                $('videoMetaDetails').textContent = `${item.uploader} • Duración: ${item.durationString}`;
+
+                logEvent(`Procesando de inmediato: "${item.title}"`, 'info');
+                $('btnConvertAndUpload').click();
+            };
+
             actions.appendChild(listenBtn);
             actions.appendChild(selectBtn);
+            actions.appendChild(convertDirectBtn);
 
             row.appendChild(img);
             row.appendChild(info);
@@ -522,10 +575,11 @@ function calculateSimilarity(a, b) {
     if (normA === normB) return 1.0;
     if (!normA || !normB) return 0.0;
 
+    // Solo si una es subcadena de la otra Y la longitud es al menos el 60%
     if (normA.includes(normB) || normB.includes(normA)) {
         const shorter = Math.min(normA.length, normB.length);
         const longer = Math.max(normA.length, normB.length);
-        if (shorter / longer >= 0.35) {
+        if (shorter / longer >= 0.60) {
             return 0.85 + 0.15 * (shorter / longer);
         }
     }
@@ -539,16 +593,22 @@ function calculateSimilarity(a, b) {
     const bB = getBigrams(normB);
     let common = 0;
     for (const bg of bA) if (bB.has(bg)) common++;
-    return (2.0 * common) / (bA.size + bB.size);
+    const total = bA.size + bB.size;
+    return total > 0 ? (2.0 * common) / total : 0.0;
 }
 
 function findSimilarTrack(candidateTitle) {
+    const normCandidate = normalizeTitle(candidateTitle);
+    if (!normCandidate || bypassedSimilarityTitles.has(normCandidate)) {
+        return null;
+    }
+
     let bestMatch = null;
     let highestScore = 0;
 
     for (const track of myTracksCache) {
         const score = calculateSimilarity(candidateTitle, track.display_name);
-        if (score > highestScore && score >= 0.55) {
+        if (score > highestScore && score >= 0.65) {
             highestScore = score;
             bestMatch = track;
         }
@@ -556,12 +616,30 @@ function findSimilarTrack(candidateTitle) {
     return bestMatch ? { track: bestMatch, score: highestScore } : null;
 }
 
+function closeSimilarityModal() {
+    const modal = $('similarityModal');
+    if (!modal) return;
+    modal.classList.add('hide');
+
+    const audios = $('modalAudioCompareWrap').querySelectorAll('audio');
+    audios.forEach(a => {
+        try { a.pause(); a.currentTime = 0; } catch (e) {}
+    });
+    $('modalAudioCompareWrap').innerHTML = '';
+    $('modalRenameSection').classList.add('hide');
+    $('btnModalRename').textContent = 'Cambiar Nombre';
+}
+
 function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
+    closeSimilarityModal();
+
     $('modalNewTitle').textContent = newTitle;
     $('modalNewAlbum').textContent = newAlbum || 'Sin álbum';
 
     $('modalExistingTitle').textContent = existingTrack.display_name;
     $('modalExistingAlbum').textContent = existingTrack.album || 'Sin álbum';
+
+    $('modalRenameInput').value = newTitle;
 
     const modalAudioWrap = $('modalAudioCompareWrap');
     modalAudioWrap.innerHTML = '';
@@ -594,43 +672,98 @@ function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
 
     $('similarityModal').classList.remove('hide');
 
+    // Opción 1: Subir de todos modos
     $('btnModalUploadAnyway').onclick = () => {
-        $('similarityModal').classList.add('hide');
-        onConfirm();
+        bypassedSimilarityTitles.add(normalizeTitle(newTitle));
+        closeSimilarityModal();
+        onConfirm(newTitle);
     };
 
+    // Opción 2: Cambiar Nombre in-situ
     $('btnModalRename').onclick = () => {
-        $('similarityModal').classList.add('hide');
-        $('customTitleInput').focus();
-        $('customTitleInput').select();
+        const renameSection = $('modalRenameSection');
+        if (renameSection.classList.contains('hide')) {
+            renameSection.classList.remove('hide');
+            $('btnModalRename').textContent = 'Guardar y Subir';
+            $('modalRenameInput').focus();
+            $('modalRenameInput').select();
+        } else {
+            const updatedTitle = $('modalRenameInput').value.trim() || newTitle;
+            $('customTitleInput').value = updatedTitle;
+            bypassedSimilarityTitles.add(normalizeTitle(updatedTitle));
+            closeSimilarityModal();
+            onConfirm(updatedTitle);
+        }
     };
 
+    // Opción 3: Cancelar
     $('btnModalCancel').onclick = () => {
-        $('similarityModal').classList.add('hide');
+        closeSimilarityModal();
         logEvent('Subida cancelada por el usuario tras verificar similitud.', 'warn');
+        resetConvertButtonState();
     };
+
+    // Botón Cruz ✕
+    if ($('btnModalCloseCross')) {
+        $('btnModalCloseCross').onclick = () => {
+            closeSimilarityModal();
+            resetConvertButtonState();
+        };
+    }
 }
+
+// Cierre del modal con clic fuera o tecla Escape
+$('similarityModal').addEventListener('click', (e) => {
+    if (e.target === $('similarityModal')) {
+        closeSimilarityModal();
+        resetConvertButtonState();
+    }
+});
+
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        if (!$('similarityModal').classList.contains('hide')) {
+            closeSimilarityModal();
+            resetConvertButtonState();
+        }
+    }
+});
 
 // ══════════════════════════════════════════════════════════════════════
 // 7. PIPELINE DE CONVERSIÓN Y SUBIDA (INDIVIDUAL O PLAYLIST)
 // ══════════════════════════════════════════════════════════════════════
 
 async function executeUpload(url, customTitle, album) {
+    if (!url) {
+        logEvent('Ingresa un enlace de YouTube o selecciona una canción del buscador.', 'warn');
+        resetConvertButtonState();
+        return;
+    }
+
     const sessionRes = await supabaseClient.auth.getSession();
     const token = sessionRes.data?.session?.access_token || currentAccessToken;
 
-    if (!token) {
-        logEvent('Tu sesión ha expirado. Inicia sesión de nuevo.', 'error');
+    if (!token || !currentUserId) {
+        logEvent('Tu sesión ha expirado o no es válida. Inicia sesión de nuevo.', 'error');
+        $('lockOverlay').style.display = 'flex';
+        $('appCard').classList.add('hide');
+        showLockError('Tu sesión ha expirado. Por favor ingresa tus datos.');
+        resetConvertButtonState();
         return;
     }
 
     const btn = $('btnConvertAndUpload');
     btn.disabled = true;
     $('convertBtnIcon').textContent = '⏳';
-    $('convertBtnText').textContent = 'Convirtiendo...';
+    $('convertBtnText').textContent = 'Descargando y convirtiendo a MP3...';
+    $('btnResetConvertState').classList.remove('hide');
 
-    logEvent(`Procesando "${customTitle}"...`, 'info');
-    logEvent(`Descargando audio de YouTube y transcodificando a MP3...`, 'info');
+    const consoleBox = $('consoleBox');
+    consoleBox.classList.remove('hide');
+    consoleBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    logEvent(`Iniciando procesamiento de "${customTitle}"...`, 'info');
+    logEvent(`Descargando audio de YouTube y transcodificando a MP3 de alta fidelidad...`, 'info');
 
     try {
         const result = await safeFetchJson('/api/convert-and-upload', {
@@ -643,7 +776,7 @@ async function executeUpload(url, customTitle, album) {
                 accessToken: token,
                 userId: currentUserId
             })
-        });
+        }, 180000);
 
         logEvent(`✔ ${result.message}`, 'success');
 
@@ -656,11 +789,9 @@ async function executeUpload(url, customTitle, album) {
         await loadUploadedTracks();
 
     } catch (err) {
-        logEvent(`Error al procesar: ${err.message}`, 'error');
+        logEvent(`✘ Error en el proceso: ${err.message}`, 'error');
     } finally {
-        btn.disabled = false;
-        $('convertBtnIcon').textContent = '⚡';
-        $('convertBtnText').textContent = 'Convertir a MP3 y Subir a mi Perfil';
+        resetConvertButtonState();
     }
 }
 
@@ -675,52 +806,69 @@ async function processPlaylistUpload(plData, album) {
 
     const btn = $('btnConvertAndUpload');
     btn.disabled = true;
+    $('btnResetConvertState').classList.remove('hide');
 
-    logEvent(`Iniciando conversión de playlist: ${selectedTracks.length} canciones al álbum "${album}"`, 'info');
+    const consoleBox = $('consoleBox');
+    consoleBox.classList.remove('hide');
+    consoleBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    logEvent(`Iniciando conversión de playlist: ${selectedTracks.length} canciones al álbum "${album || 'Sin álbum'}"`, 'info');
 
     let successCount = 0;
-    for (let i = 0; i < selectedTracks.length; i++) {
-        const t = selectedTracks[i];
-        $('convertBtnText').textContent = `Procesando [${i + 1}/${selectedTracks.length}]: ${t.title}`;
-        logEvent(`[${i + 1}/${selectedTracks.length}] Descargando "${t.title}"...`, 'info');
+    try {
+        for (let i = 0; i < selectedTracks.length; i++) {
+            const t = selectedTracks[i];
+            $('convertBtnText').textContent = `Procesando [${i + 1}/${selectedTracks.length}]: ${t.title}`;
+            logEvent(`[${i + 1}/${selectedTracks.length}] Descargando "${t.title}"...`, 'info');
 
-        try {
-            const sessionRes = await supabaseClient.auth.getSession();
-            const token = sessionRes.data?.session?.access_token || currentAccessToken;
+            try {
+                const sessionRes = await supabaseClient.auth.getSession();
+                const token = sessionRes.data?.session?.access_token || currentAccessToken;
 
-            const res = await safeFetchJson('/api/convert-and-upload', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url: t.url,
-                    album: album || null,
-                    customTitle: t.cleanTitle || t.title,
-                    accessToken: token,
-                    userId: currentUserId
-                })
-            });
+                await safeFetchJson('/api/convert-and-upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: t.url,
+                        album: album || null,
+                        customTitle: t.cleanTitle || t.title,
+                        accessToken: token,
+                        userId: currentUserId
+                    })
+                }, 180000);
 
-            successCount++;
-            logEvent(`✔ [${i + 1}/${selectedTracks.length}] "${t.title}" agregada.`, 'success');
-        } catch (e) {
-            logEvent(`✘ Error en "${t.title}": ${e.message}`, 'error');
+                successCount++;
+                logEvent(`✔ [${i + 1}/${selectedTracks.length}] "${t.title}" agregada.`, 'success');
+            } catch (e) {
+                logEvent(`✘ Error en "${t.title}": ${e.message}`, 'error');
+            }
         }
+
+        logEvent(`Finalizada la playlist: ${successCount} de ${selectedTracks.length} canciones procesadas.`, 'success');
+
+        $('playlistBox').classList.add('hide');
+        $('youtubeUrlInput').value = '';
+        currentPlaylistData = null;
+
+        await loadAlbumsDataList();
+        await loadUploadedTracks();
+
+    } catch (fatalErr) {
+        logEvent(`Error general en la playlist: ${fatalErr.message}`, 'error');
+    } finally {
+        resetConvertButtonState();
     }
-
-    logEvent(`Finalizada la playlist: ${successCount} de ${selectedTracks.length} canciones procesadas.`, 'success');
-    btn.disabled = false;
-    $('convertBtnIcon').textContent = '⚡';
-    $('convertBtnText').textContent = 'Convertir a MP3 y Subir a mi Perfil';
-
-    $('playlistBox').classList.add('hide');
-    $('youtubeUrlInput').value = '';
-    currentPlaylistData = null;
-
-    await loadAlbumsDataList();
-    await loadUploadedTracks();
 }
 
+$('btnResetConvertState').onclick = () => {
+    resetConvertButtonState();
+    logEvent('Botón de conversión restablecido manualmente.', 'warn');
+};
+
 $('btnConvertAndUpload').onclick = async () => {
+    const btn = $('btnConvertAndUpload');
+    if (btn.disabled) return;
+
     const album = $('albumInput').value.trim() || null;
 
     if (currentPlaylistData && !$('playlistBox').classList.contains('hide')) {
@@ -731,18 +879,24 @@ $('btnConvertAndUpload').onclick = async () => {
     const url = $('youtubeUrlInput').value.trim();
     if (!url) {
         logEvent('Ingresa un enlace de YouTube o selecciona una canción del buscador.', 'warn');
+        if ($('tabSearchYt').classList.contains('active')) {
+            $('ytSearchInput').focus();
+        } else {
+            $('youtubeUrlInput').focus();
+        }
         return;
     }
 
     let customTitle = $('customTitleInput').value.trim();
     if (!customTitle) {
         customTitle = `YouTube_${Date.now()}`;
+        $('customTitleInput').value = customTitle;
     }
 
     const match = findSimilarTrack(customTitle);
     if (match) {
-        showSimilarityModal(customTitle, album, match.track, () => {
-            executeUpload(url, customTitle, album);
+        showSimilarityModal(customTitle, album, match.track, (finalTitle) => {
+            executeUpload(url, finalTitle || customTitle, album);
         });
     } else {
         await executeUpload(url, customTitle, album);

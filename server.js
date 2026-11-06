@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.8.0
+ * Versión: 1.8.1
  * Descripción: Servidor Express optimizado y enfocado en YouTube:
  *              - Búsqueda extendida en YouTube (hasta 50 resultados por consulta)
  *              - Barra interactiva de previsualización y pre-escucha antes de descargar

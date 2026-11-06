@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor YouTube a MP3 - Supabase Chat v1.8.0</title>
-    <!-- Estilos de la aplicación v1.8.0 -->
+    <title>Conversor YouTube a MP3 - Supabase Chat v1.8.1</title>
+    <!-- Estilos de la aplicación v1.8.1 -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -146,11 +146,16 @@
                     </small>
                 </div>
 
-                <!-- Botón de Conversión y Subida -->
-                <button id="btnConvertAndUpload" class="btn-primary" type="button" style="margin-top: 0.5rem; padding: 1rem;">
-                    <span id="convertBtnIcon">⚡</span>
-                    <span id="convertBtnText">Convertir a MP3 y Subir a mi Perfil</span>
-                </button>
+                <!-- Botón de Conversión y Subida con Restablecimiento de Emergencia -->
+                <div style="display: flex; gap: 8px; align-items: stretch; margin-top: 0.5rem;">
+                    <button id="btnConvertAndUpload" class="btn-primary" type="button" style="flex: 1; padding: 1rem;">
+                        <span id="convertBtnIcon">⚡</span>
+                        <span id="convertBtnText">Convertir a MP3 y Subir a mi Perfil</span>
+                    </button>
+                    <button id="btnResetConvertState" class="btn-secondary hide" type="button" title="Si el botón se queda atascado, pulsa aquí para restablecerlo" style="padding: 0 1rem; font-size: 0.88rem; white-space: nowrap;">
+                        ↺ Desbloquear
+                    </button>
+                </div>
             </div>
 
             <!-- Consola de Eventos y Progreso en Vivo -->
@@ -213,9 +218,12 @@
              ══════════════════════════════════════════════════════════════════ -->
         <div id="similarityModal" class="modal-overlay hide">
             <div class="modal-box">
-                <div class="modal-header">
-                    <span>⚠️</span>
-                    <span>Canción con Nombre Similar Detectada</span>
+                <div class="modal-header" style="justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                        <span>⚠️</span>
+                        <span>Canción con Nombre Similar Detectada</span>
+                    </div>
+                    <button id="btnModalCloseCross" type="button" style="background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; padding: 2px 6px;" title="Cerrar ventana">✕</button>
                 </div>
                 <p style="font-size: 0.9rem; color: #ddd;">
                     Se encontró una canción en tu perfil con un nombre similar. Compara ambas antes de continuar:
@@ -244,6 +252,14 @@
                             </button>
                         </div>
                     </div>
+                </div>
+
+                <!-- Campo para renombrar directamente dentro del modal -->
+                <div id="modalRenameSection" class="hide" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
+                    <label for="modalRenameInput" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                        Modifica el nombre para diferenciarla en tu perfil:
+                    </label>
+                    <input id="modalRenameInput" type="text" style="width: 100%; padding: 0.5rem 0.8rem; font-size: 0.88rem;" placeholder="Nuevo nombre para la canción">
                 </div>
 
                 <div class="modal-actions">
