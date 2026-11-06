@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subir música</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#111;color:#eee;max-width:520px;margin:2rem auto;padding:0 1rem}
+  input,button,select{width:100%;padding:.75rem;margin:.3rem 0;border-radius:20px;border:1px solid #333;background:#1a1a1a;color:#fff;box-sizing:border-box;font-size:.95rem}
+  button{background:#3ecf8e;border:0;cursor:pointer;font-weight:bold}
+  button:disabled{opacity:.5}
+  .row{display:flex;gap:8px;align-items:center}
+  .row button{width:44px;flex-shrink:0;padding:.75rem 0}
+  label.chk{display:flex;gap:.5rem;align-items:center;margin:.4rem 0}
+  label.chk input{width:auto}
+  #log div{font-size:.85rem;padding:.2rem 0;white-space:pre-wrap}
+  .ok{color:#3ecf8e}.warn{color:#fbbf24}.err{color:#f87171}.hide{display:none}
+</style>
+</head>
+<body>
+<h2>Subir música</h2>
+
+<section id="login">
+  <div class="row">
+    <input id="username" type="text" placeholder="Usuario" autocomplete="username">
+    <button id="btnUsers" type="button" title="Ver usuarios">▾</button>
+  </div>
+  <select id="userList" class="hide" size="5"></select>
+  <input id="pass" type="password" placeholder="Contraseña" autocomplete="current-password">
+  <button id="btnLogin">Entrar</button>
+  <div id="loginMsg" class="err"></div>
+</section>
+
+<section id="app" class="hide">
+  <div>Sesión: <b id="who"></b> <button id="btnOut" style="width:auto;padding:.3rem .9rem;margin-left:.5rem">Salir</button></div>
+  <input id="album" list="albums" placeholder="Álbum (vacío = sin álbum)">
+  <datalist id="albums"></datalist>
+  <input id="files" type="file" accept=".mp3,audio/mpeg" multiple>
+  <button id="btnUp">Subir</button>
+  <div id="log"></div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Mismo login, cliente y Worker R2 que el chat. Este archivo va en la misma carpeta que index.html -->
+<script src="js/config.js"></script>
+<script src="js/media-api.js"></script>
+<script src="js/auth.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let uid = null;
+const log = (t, c) => { const d = document.createElement('div'); d.textContent = t; if (c) d.className = c; $('log').prepend(d); };
+
+async function computeFileHash(file) {
+  const h = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// --- Lista de usuarios (igual que el chat: REST con anon key a profiles) ---
+let usernames = null;
+async function fetchUsernames() {
+  if (usernames) return usernames;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=username&order=username.asc`,
+      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } });
+    const d = r.ok ? await r.json() : [];
+    usernames = Array.isArray(d) ? d.map(p => p.username).filter(Boolean) : [];
+  } catch (e) { usernames = []; }
+  return usernames;
+}
+$('btnUsers').onclick = async () => {
+  const sel = $('userList');
+  if (!sel.classList.contains('hide')) return sel.classList.add('hide');
+  const list = await fetchUsernames();
+  sel.innerHTML = list.length ? list.map(u => `<option>${u.replace(/</g, '&lt;')}</option>`).join('') : '<option disabled>Sin usuarios registrados</option>';
+  sel.classList.remove('hide');
+};
+$('userList').onchange = e => { $('username').value = e.target.value; e.target.classList.add('hide'); $('pass').focus(); };
+
+// --- Login (mismo loginAccount del chat) ---
+async function doLogin() {
+  $('loginMsg').textContent = '';
+  try {
+    const user = await loginAccount($('username').value, $('pass').value);
+    uid = user.id;
+    $('who').textContent = $('username').value.trim();
+    $('login').classList.add('hide'); $('app').classList.remove('hide');
+    loadAlbums();
+  } catch (e) { $('loginMsg').textContent = e.message; }
+}
+$('btnLogin').onclick = doLogin;
+$('pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+$('btnOut').onclick = async () => { await supabaseClient.auth.signOut(); location.reload(); };
+
+async function loadAlbums() {
+  const { data } = await supabaseClient.from('music_tracks').select('album').eq('user_id', uid).not('album', 'is', null);
+  const set = [...new Set((data || []).map(r => r.album))].sort();
+  $('albums').innerHTML = set.map(a => `<option value="${a.replace(/"/g, '&quot;')}">`).join('');
+}
+
+// --- Subida (misma lógica que music.js) ---
+$('btnUp').onclick = async () => {
+  const files = [...$('files').files];
+  if (!files.length) return;
+  const album = $('album').value.trim() || null;
+  $('btnUp').disabled = true;
+
+  let existing = new Set();
+  const { data: ex } = await supabaseClient.from('music_tracks').select('display_name').eq('user_id', uid);
+  existing = new Set((ex || []).map(t => t.display_name.trim().toLowerCase()));
+
+  for (const f of files) {
+    try {
+      const displayName = f.name.replace(/\.[^/.]+$/, '');
+      const norm = displayName.trim().toLowerCase();
+      if (existing.has(norm)) { log(`↷ Ya la tenías: ${displayName}`, 'warn'); continue; }
+
+      const fileHash = await computeFileHash(f);
+      const { data: shared } = await supabaseClient.rpc('find_active_track_by_hash', { p_hash: fileHash });
+      let fileName;
+      if (shared) { fileName = shared; }
+      else { fileName = (await uploadToR2('music', f)).key; }
+
+      const { error } = await supabaseClient.from('music_tracks').insert([{
+        user_id: uid, file_name: fileName, file_hash: fileHash,
+        display_name: displayName, is_public: false, album
+      }]);
+      if (error) throw error;
+      existing.add(norm);
+      log(`✔ ${displayName}`, 'ok');
+    } catch (e) { log(`✘ ${f.name}: ${e.message || e}`, 'err'); }
+  }
+  $('btnUp').disabled = false;
+  $('files').value = '';
+  loadAlbums();
+};
+</script>
+</body>
+</html>

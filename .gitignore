@@ -1,0 +1,21 @@
+# Archivos y dependencias del sistema
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Carpeta de respaldo del chat antiguo (separada según requerimiento)
+chat_backup/
+
+# Archivos temporales de audio convertidos de YouTube
+temp_audio/
+*.tmp
+*.mp3
+
+# Variables de entorno locales
+.env
+.env.local
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
