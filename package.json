@@ -1,25 +1,33 @@
 {
   "name": "youtube-to-mp3-supabase-chat",
-  "version": "1.4.0",
-  "description": "Conversor de YouTube a MP3 con búsqueda extendida (hasta 40 resultados), barra interactiva de pre-escucha antes de descargar, safeFetchJson y gestión de álbumes en Supabase Chat",
+  "version": "1.5.0",
+  "description": "Conversor de YouTube a MP3 con integración de Spotify (importación de biblioteca y playlists), pre-escucha interactiva, compatibilidad multiplataforma y despliegue automatizado en Render.com",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "postinstall": "node scripts/setup-binaries.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "keywords": [
     "youtube",
+    "spotify",
     "mp3",
     "audio",
     "supabase",
     "cloudflare-r2",
     "chat",
-    "preview"
+    "preview",
+    "render"
   ],
   "author": "abel",
   "license": "ISC",
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
     "express": "^4.21.2"
   }
 }

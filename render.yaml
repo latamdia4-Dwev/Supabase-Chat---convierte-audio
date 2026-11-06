@@ -1,0 +1,27 @@
+# ============================================================================
+# Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
+# Archivo: render.yaml
+# Versión: 1.5.0
+# Descripción: Especificación declarativa de infraestructura para Render.com
+#              Configura el Web Service con Node.js, compilación de binarios
+#              yt-dlp/ffmpeg y variables de entorno.
+# ============================================================================
+
+services:
+  - type: web
+    name: youtube-to-mp3-supabase-chat
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && node scripts/setup-binaries.js
+    startCommand: node server.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: SPOTIFY_REDIRECT_URI
+        sync: false
