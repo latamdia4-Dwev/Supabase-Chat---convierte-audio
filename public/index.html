@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor YouTube a MP3 - Supabase Chat v1.8.3</title>
-    <!-- Estilos de la aplicación v1.8.3 -->
-    <link rel="stylesheet" href="styles.css">
+    <title>Conversor YouTube a MP3 - Supabase Chat v1.8.4</title>
+    <!-- Estilos de la aplicación v1.8.4 con cache-busting -->
+    <link rel="stylesheet" href="styles.css?v=1.8.4">
 </head>
 <body>
     <div class="container">
@@ -146,6 +146,62 @@
                     </small>
                 </div>
 
+                <!-- Tarjeta Inline Inamovible de Canción Similar (Sin bugs de modales flotantes) -->
+                <div id="similarityInlineCard" class="hide" style="background: #181b22; border: 2px solid #fbbf24; border-radius: 14px; padding: 1.2rem; margin-top: 1rem; margin-bottom: 1rem; box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem;">
+                        <div style="display: flex; align-items: center; gap: 8px; color: #fbbf24; font-weight: 700; font-size: 1.05rem;">
+                            <span>⚠️</span>
+                            <span>Canción con Nombre Similar Detectada en tu Perfil</span>
+                        </div>
+                        <button id="btnInlineClose" type="button" style="background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; padding: 0 4px;" title="Cerrar aviso">✕</button>
+                    </div>
+                    
+                    <p style="font-size: 0.88rem; color: #cbd5e1; margin-bottom: 0.8rem;">
+                        Ya tienes una canción parecida registrada. Compara ambas y decide si deseas continuar:
+                    </p>
+
+                    <div class="comparison-table" id="inlineCompareTable" style="margin-bottom: 0.8rem;">
+                        <!-- Nueva -->
+                        <div class="compare-row new">
+                            <div class="compare-badge">Canción que vas a subir</div>
+                            <div style="font-weight: 600; color: #fff;" id="inlineNewTitle"></div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">
+                                Álbum destino: <span id="inlineNewAlbum" style="color: var(--primary);"></span>
+                            </div>
+                        </div>
+
+                        <!-- Existente -->
+                        <div class="compare-row existing">
+                            <div class="compare-badge">Ya existente en tu perfil</div>
+                            <div style="font-weight: 600; color: #fff;" id="inlineExistingTitle"></div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">
+                                Álbum actual: <span id="inlineExistingAlbum" style="color: var(--warning);"></span>
+                            </div>
+                            <div id="inlineAudioCompareWrap" style="margin-top: 6px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Renombrado in-situ -->
+                    <div id="inlineRenameSection" class="hide" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; margin-bottom: 0.8rem;">
+                        <label for="inlineRenameInput" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">
+                            Escribe un nuevo nombre para diferenciarla:
+                        </label>
+                        <input id="inlineRenameInput" type="text" style="width: 100%; padding: 0.5rem 0.8rem; font-size: 0.88rem;" placeholder="Nuevo nombre de la canción">
+                    </div>
+
+                    <!-- Estado de carga in-situ -->
+                    <div id="inlineLoadingState" class="hide" style="text-align: center; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 8px; margin-bottom: 0.8rem;">
+                        <div style="font-size: 1.8rem; animation: pulse 1.5s infinite;">⏳</div>
+                        <div id="inlineLoadingText" style="font-weight: 600; color: var(--primary); margin-top: 4px;">Descargando y subiendo...</div>
+                    </div>
+
+                    <div style="display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;" id="inlineActionsRow">
+                        <button id="btnInlineCancel" class="btn-secondary" type="button" style="padding: 0.6rem 1rem;">Cancelar</button>
+                        <button id="btnInlineRename" class="btn-secondary" type="button" style="padding: 0.6rem 1rem;">Cambiar Nombre</button>
+                        <button id="btnInlineUploadAnyway" class="btn-primary" type="button" style="width: auto; padding: 0.6rem 1.2rem;">Subir de todos modos</button>
+                    </div>
+                </div>
+
                 <!-- Botón de Conversión y Subida con Restablecimiento de Emergencia -->
                 <div style="display: flex; gap: 8px; align-items: stretch; margin-top: 0.5rem;">
                     <button id="btnConvertAndUpload" class="btn-primary" type="button" style="flex: 1; padding: 1rem;">
@@ -282,11 +338,11 @@
         </div>
     </div>
 
-    <!-- Scripts de Supabase y Utilidades Compartidas del Chat -->
+    <!-- Scripts de Supabase y Utilidades Compartidas del Chat con cache-busting v1.8.4 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/js/config.js"></script>
-    <script src="/js/media-api.js"></script>
-    <script src="/js/auth.js"></script>
-    <script src="app.js"></script>
+    <script src="/js/config.js?v=1.8.4"></script>
+    <script src="/js/media-api.js?v=1.8.4"></script>
+    <script src="/js/auth.js?v=1.8.4"></script>
+    <script src="app.js?v=1.8.4"></script>
 </body>
 </html>

@@ -2,12 +2,12 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.8.3
+ * Versión: 1.8.4
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
- *              - Estado de carga en vivo dentro del modal de similitud (sin cierres a ciegas)
- *              - Prevención integral de bloqueos: visualización de progreso y desbloqueo
- *              - Soporte de certificados SSL universales en backend (--no-check-certificates)
- *              - Eliminación definitiva de congelamientos por peticiones lentas o duplicados
+ *              - Tarjeta inline inamovible de comparación de duplicados (erradicación de bugs de modales flotantes)
+ *              - Panel de progreso interactivo y detección amigable de límite de 500 MB en Cloudflare
+ *              - Cache-busting estricto (?v=1.8.4) en todos los recursos estáticos
+ *              - Soporte SSL universal (--no-check-certificates) en backend para descargas veloces
  * ============================================================================
  */
 
@@ -613,55 +613,51 @@ function findSimilarTrack(candidateTitle) {
 
 let modalOpenedAt = 0;
 
-function closeSimilarityModal(force = false) {
-    if (!force && Date.now() - modalOpenedAt < 300) {
-        return;
+function closeSimilarityNotification() {
+    const card = $('similarityInlineCard');
+    if (card) {
+        card.classList.add('hide');
+        const audios = card.querySelectorAll('audio');
+        audios.forEach(a => {
+            try { a.pause(); a.currentTime = 0; } catch (e) {}
+        });
+        $('inlineAudioCompareWrap').innerHTML = '';
+        $('inlineRenameSection').classList.add('hide');
+        $('btnInlineRename').textContent = 'Cambiar Nombre';
+        $('inlineCompareTable').classList.remove('hide');
+        $('inlineActionsRow').classList.remove('hide');
+        $('inlineLoadingState').classList.add('hide');
     }
-
     const modal = $('similarityModal');
-    if (!modal) return;
-    modal.classList.add('hide');
-
-    const audios = $('modalAudioCompareWrap').querySelectorAll('audio');
-    audios.forEach(a => {
-        try { a.pause(); a.currentTime = 0; } catch (e) {}
-    });
-    $('modalAudioCompareWrap').innerHTML = '';
-    $('modalRenameSection').classList.add('hide');
-    $('btnModalRename').textContent = 'Cambiar Nombre';
-
-    // Restaurar vistas internas del modal
-    const compareTable = document.querySelector('#similarityModal .comparison-table');
-    if (compareTable) compareTable.classList.remove('hide');
-    const actionsRow = $('modalActionsRow');
-    if (actionsRow) actionsRow.classList.remove('hide');
-    const loadingState = $('modalLoadingState');
-    if (loadingState) loadingState.classList.add('hide');
+    if (modal) modal.classList.add('hide');
 }
 
-function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
-    modalOpenedAt = Date.now();
+function showSimilarityInlineCard(newTitle, newAlbum, existingTrack, onConfirm) {
+    closeSimilarityNotification();
 
-    $('modalNewTitle').textContent = newTitle;
-    $('modalNewAlbum').textContent = newAlbum || 'Sin álbum';
+    const card = $('similarityInlineCard');
+    if (!card) return;
 
-    $('modalExistingTitle').textContent = existingTrack.display_name;
-    $('modalExistingAlbum').textContent = existingTrack.album || 'Sin álbum';
+    $('inlineNewTitle').textContent = newTitle;
+    $('inlineNewAlbum').textContent = newAlbum || 'Sin álbum';
 
-    $('modalRenameInput').value = newTitle;
-    $('modalRenameSection').classList.add('hide');
-    $('btnModalRename').textContent = 'Cambiar Nombre';
+    $('inlineExistingTitle').textContent = existingTrack.display_name;
+    $('inlineExistingAlbum').textContent = existingTrack.album || 'Sin álbum';
 
-    const compareTable = document.querySelector('#similarityModal .comparison-table');
+    $('inlineRenameInput').value = newTitle;
+    $('inlineRenameSection').classList.add('hide');
+    $('btnInlineRename').textContent = 'Cambiar Nombre';
+
+    const compareTable = $('inlineCompareTable');
     if (compareTable) compareTable.classList.remove('hide');
-    const actionsRow = $('modalActionsRow');
+    const actionsRow = $('inlineActionsRow');
     if (actionsRow) actionsRow.classList.remove('hide');
-    const loadingState = $('modalLoadingState');
+    const loadingState = $('inlineLoadingState');
     if (loadingState) loadingState.classList.add('hide');
 
-    const modalAudioWrap = $('modalAudioCompareWrap');
-    modalAudioWrap.innerHTML = '';
-
+    // Botón para reproducir la canción que ya existe
+    const audioWrap = $('inlineAudioCompareWrap');
+    audioWrap.innerHTML = '';
     const playBtn = document.createElement('button');
     playBtn.type = 'button';
     playBtn.className = 'btn-secondary';
@@ -679,88 +675,89 @@ function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
             audio.controls = true;
             audio.src = signedUrl;
             audio.autoplay = true;
-            modalAudioWrap.innerHTML = '';
-            modalAudioWrap.appendChild(audio);
+            audioWrap.innerHTML = '';
+            audioWrap.appendChild(audio);
         } catch (err) {
             alert('Error al reproducir canción existente: ' + err.message);
             playBtn.disabled = false;
             playBtn.textContent = '▶ Escuchar la que ya tienes';
         }
     };
-    modalAudioWrap.appendChild(playBtn);
+    audioWrap.appendChild(playBtn);
 
-    $('similarityModal').classList.remove('hide');
+    card.classList.remove('hide');
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     const triggerUpload = async (titleToUpload) => {
         if (compareTable) compareTable.classList.add('hide');
         if (actionsRow) actionsRow.classList.add('hide');
         if (loadingState) loadingState.classList.remove('hide');
-        $('modalLoadingText').textContent = 'Descargando audio de YouTube y transcodificando a MP3...';
+        $('inlineLoadingText').textContent = 'Descargando audio de YouTube y transcodificando a MP3...';
 
         try {
             await onConfirm(titleToUpload);
-            $('modalLoadingText').textContent = '✔ ¡Canción convertida y agregada a tu perfil!';
+            $('inlineLoadingText').textContent = '✔ ¡Canción agregada con éxito a tu perfil!';
             setTimeout(() => {
-                closeSimilarityModal(true);
-            }, 1200);
+                closeSimilarityNotification();
+            }, 1500);
         } catch (uploadErr) {
-            $('modalLoadingText').innerHTML = `<span style="color: var(--danger)">✘ ${uploadErr.message}</span>`;
             if (actionsRow) actionsRow.classList.remove('hide');
-            $('btnModalUploadAnyway').textContent = 'Reintentar Subida';
+            const is500Mb = uploadErr.message && uploadErr.message.includes('500 MB');
+            if (is500Mb) {
+                $('inlineLoadingText').innerHTML = `
+                    <div style="color: #f87171; font-weight: 700; font-size: 0.95rem; margin-bottom: 4px;">
+                        ⚠️ Límite de 500 MB alcanzado en tu cuenta de Cloudflare
+                    </div>
+                    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.4;">
+                        Elimina canciones viejas o repetidas de tu lista de abajo con el botón 🗑️ para liberar espacio y vuelve a presionar "Reintentar Subida".
+                    </div>
+                `;
+            } else {
+                $('inlineLoadingText').innerHTML = `<span style="color: var(--danger)">✘ ${uploadErr.message}</span>`;
+            }
+            $('btnInlineUploadAnyway').textContent = 'Reintentar Subida';
         }
     };
 
-    // Opción 1: Subir de todos modos (con progreso en vivo dentro del modal)
-    $('btnModalUploadAnyway').onclick = async (e) => {
+    // Botón Subir de todos modos
+    $('btnInlineUploadAnyway').onclick = async (e) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
         bypassedSimilarityTitles.add(normalizeTitle(newTitle));
         await triggerUpload(newTitle);
     };
 
-    // Opción 2: Cambiar Nombre in-situ
-    $('btnModalRename').onclick = async (e) => {
+    // Botón Cambiar Nombre
+    $('btnInlineRename').onclick = async (e) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
-        const renameSection = $('modalRenameSection');
-        if (renameSection.classList.contains('hide')) {
-            renameSection.classList.remove('hide');
-            $('btnModalRename').textContent = 'Guardar y Subir';
-            $('modalRenameInput').focus();
-            $('modalRenameInput').select();
+        const renameSec = $('inlineRenameSection');
+        if (renameSec.classList.contains('hide')) {
+            renameSec.classList.remove('hide');
+            $('btnInlineRename').textContent = 'Guardar y Subir';
+            $('inlineRenameInput').focus();
+            $('inlineRenameInput').select();
         } else {
-            const updatedTitle = $('modalRenameInput').value.trim() || newTitle;
-            $('customTitleInput').value = updatedTitle;
-            bypassedSimilarityTitles.add(normalizeTitle(updatedTitle));
-            await triggerUpload(updatedTitle);
+            const updated = $('inlineRenameInput').value.trim() || newTitle;
+            $('customTitleInput').value = updated;
+            bypassedSimilarityTitles.add(normalizeTitle(updated));
+            await triggerUpload(updated);
         }
     };
 
-    // Opción 3: Cancelar
-    $('btnModalCancel').onclick = (e) => {
+    // Botón Cancelar
+    $('btnInlineCancel').onclick = (e) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
-        closeSimilarityModal(true);
-        logEvent('Subida cancelada por el usuario tras verificar similitud.', 'warn');
+        closeSimilarityNotification();
+        logEvent('Subida cancelada por el usuario tras verificar duplicado.', 'warn');
         resetConvertButtonState();
     };
 
     // Botón Cruz ✕
-    if ($('btnModalCloseCross')) {
-        $('btnModalCloseCross').onclick = (e) => {
-            if (e) { e.preventDefault(); e.stopPropagation(); }
-            closeSimilarityModal(true);
-            resetConvertButtonState();
-        };
-    }
+    $('btnInlineClose').onclick = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        closeSimilarityNotification();
+        resetConvertButtonState();
+    };
 }
-
-// Cierre seguro únicamente mediante tecla Escape (tras 400ms de apertura)
-window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        if (!$('similarityModal').classList.contains('hide')) {
-            closeSimilarityModal(false);
-            resetConvertButtonState();
-        }
-    }
-});
 
 // ══════════════════════════════════════════════════════════════════════
 // 7. PIPELINE DE CONVERSIÓN Y SUBIDA (INDIVIDUAL O PLAYLIST)
@@ -936,8 +933,8 @@ $('btnConvertAndUpload').onclick = async (e) => {
 
     const match = findSimilarTrack(customTitle);
     if (match) {
-        showSimilarityModal(customTitle, album, match.track, (finalTitle) => {
-            executeUpload(url, finalTitle || customTitle, album);
+        showSimilarityInlineCard(customTitle, album, match.track, (finalTitle) => {
+            return executeUpload(url, finalTitle || customTitle, album);
         });
     } else {
         await executeUpload(url, customTitle, album);
