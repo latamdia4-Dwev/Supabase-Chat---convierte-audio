@@ -1,7 +1,7 @@
 {
   "name": "youtube-to-mp3-supabase-chat",
-  "version": "1.7.0",
-  "description": "Conversor de YouTube a MP3 con control de acceso por roles: Spotify exclusivo para Marko y administradores, ocultación de perfiles protegidos en login y despliegue en Render.com",
+  "version": "1.8.0",
+  "description": "Conversor de YouTube a MP3 de alta fidelidad para Supabase Chat: búsqueda extendida interactiva, pre-escucha con reproductor flotante, deduplicación SHA-256 en Cloudflare R2, gestión de álbumes idéntica al chat y despliegue automatizado en Render.com",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -13,12 +13,12 @@
   },
   "keywords": [
     "youtube",
-    "spotify",
-    "security",
-    "role-access",
-    "qr-code",
     "mp3",
+    "audio",
     "supabase",
+    "cloudflare-r2",
+    "chat",
+    "preview",
     "render"
   ],
   "author": "abel",
@@ -27,7 +27,6 @@
     "adm-zip": "^0.5.16",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "qrcode": "^1.5.4"
+    "express": "^4.21.2"
   }
 }

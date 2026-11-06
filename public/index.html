@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor YouTube y Spotify a MP3 - Supabase Chat v1.6.1</title>
-    <!-- Estilos de la aplicación v1.6.1 -->
+    <title>Conversor YouTube a MP3 - Supabase Chat v1.8.0</title>
+    <!-- Estilos de la aplicación v1.8.0 -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <!-- Cabecera Principal -->
         <header>
-            <h1>Conversor <span>YouTube</span> &amp; <span>Spotify</span> a MP3</h1>
-            <p>Convierte a MP3, organiza álbumes y sincroniza tu música en tu perfil del chat</p>
+            <h1>Conversor <span>YouTube</span> a MP3</h1>
+            <p>Descarga, convierte a MP3 y organiza álbumes vinculados a tu perfil del chat</p>
         </header>
 
         <!-- ══════════════════════════════════════════════════════════════════
@@ -61,11 +61,10 @@
                 <button id="btnLogout" class="btn-logout" type="button">Cerrar Sesión</button>
             </div>
 
-            <!-- Pestañas de Modo: YouTube Search vs Enlace Directo vs Spotify -->
+            <!-- Pestañas de Modo: Buscar en YouTube vs Enlace Directo / Playlist -->
             <div class="nav-tabs">
                 <button id="tabModeSearch" class="nav-tab active" type="button">🔍 Buscar en YouTube</button>
-                <button id="tabModeDirect" class="nav-tab" type="button">🔗 Enlace / Playlist</button>
-                <button id="tabModeSpotify" class="nav-tab spotify-tab" type="button">🟢 Mi Spotify</button>
+                <button id="tabModeDirect" class="nav-tab" type="button">🔗 Enlace Directo / Playlist</button>
             </div>
 
             <!-- VISTA 1: Buscador de YouTube Integrado con Resultados Amplios y Pre-escucha -->
@@ -116,151 +115,6 @@
                         </button>
                     </div>
                     <div id="playlistTracksList" class="playlist-tracks-list"></div>
-                </div>
-            </div>
-
-            <!-- VISTA 3: Integración con Spotify (Personal por Perfil y con Código QR) -->
-            <div id="viewSpotify" class="hide">
-                <!-- Estado: Sin credenciales configuradas -->
-                <div id="spotifySetupBox" class="spotify-setup-box hide">
-                    <div class="spotify-header-badge">
-                        <span>🟢</span>
-                        <strong>Configuración de Spotify Developer API</strong>
-                    </div>
-                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 6px;">
-                        Para vincular tu cuenta personal de Spotify o la de tu perfil, ingresa tus credenciales de Spotify Developer:
-                    </p>
-                    <div class="spotify-guide-steps">
-                        <ol style="font-size: 0.82rem; color: #ccc; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 4px; margin: 8px 0;">
-                            <li>Entra a <a href="https://developer.spotify.com/dashboard" target="_blank" style="color: var(--primary);">developer.spotify.com/dashboard</a> e inicia sesión con tu cuenta de Spotify.</li>
-                            <li>Abre tu App y entra a <strong>Settings</strong>.</li>
-                            <li>En <strong>Redirect URIs</strong>, agrega obligatoriamente estas dos direcciones:
-                                <div style="margin: 6px 0; display: flex; flex-direction: column; gap: 4px;">
-                                    <code id="uriLocalCopy" style="background: #111; padding: 4px 8px; border-radius: 4px; color: #10b981; font-size: 0.82rem; word-break: break-all;">http://localhost:3000/api/spotify/callback</code>
-                                    <code id="uriWifiCopy" style="background: #111; padding: 4px 8px; border-radius: 4px; color: #10b981; font-size: 0.82rem; word-break: break-all;">http://192.168.50.249:3000/api/spotify/callback</code>
-                                </div>
-                                <button type="button" id="btnCopyUris" class="btn-secondary" style="padding: 3px 8px; font-size: 0.75rem; width: auto; align-self: flex-start;">
-                                    📋 Copiar Redirect URIs
-                                </button>
-                            </li>
-                            <li style="margin-top: 4px;">Guarda los cambios en Spotify y copia tu <strong>Client ID</strong> y <strong>Client Secret</strong> aquí abajo:</li>
-                        </ol>
-                    </div>
-                    <div class="form-group" style="margin-top: 8px;">
-                        <input id="spotifyInputClientId" type="text" placeholder="Spotify Client ID">
-                    </div>
-                    <div class="form-group">
-                        <input id="spotifyInputClientSecret" type="password" placeholder="Spotify Client Secret">
-                    </div>
-                    <button id="btnSaveSpotifyCreds" class="btn-spotify" type="button">
-                        💾 Guardar Credenciales de Spotify
-                    </button>
-                </div>
-
-                <!-- Estado: Credenciales configuradas pero perfil no autenticado -->
-                <div id="spotifyLoginBox" class="spotify-login-box hide">
-                    <div style="padding: 1.5rem 1rem;">
-                        <div style="text-align: center; margin-bottom: 1.2rem;">
-                            <div style="font-size: 2.8rem; margin-bottom: 0.4rem;">🟢</div>
-                            <h3 style="color: #fff; margin-bottom: 0.3rem;">Vincular Spotify Personal</h3>
-                            <p style="font-size: 0.88rem; color: var(--text-muted);">
-                                Vinculando la biblioteca de Spotify a tu cuenta: <strong id="spotifyTargetUserLabel" style="color: var(--primary);">@usuario</strong>
-                            </p>
-                        </div>
-
-                        <!-- Métodos de Vinculación: QR vs Botón Directo -->
-                        <div class="spotify-connect-methods">
-                            <!-- Opción 1: Código QR Móvil -->
-                            <div class="spotify-method-card">
-                                <div class="spotify-method-title">📱 Conectar con tu Celular (QR)</div>
-                                <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">
-                                    Apunta la cámara de tu teléfono (en la misma red Wi-Fi) para iniciar sesión con tu cuenta móvil:
-                                </p>
-                                <div class="qr-container" id="spotifyQrContainer">
-                                    <img id="spotifyQrImg" src="" alt="Código QR de Conexión" class="spotify-qr-image hide">
-                                    <div id="spotifyQrLoading" style="font-size: 0.82rem; color: var(--text-muted); padding: 2rem 1rem;">Generando código QR...</div>
-                                </div>
-                                <div style="font-size: 0.75rem; color: #10b981; margin-top: 6px; text-align: center;">
-                                    ⚡ Se conectará automáticamente al autorizar
-                                </div>
-                            </div>
-
-                            <!-- Opción 2: Navegador de la Computadora -->
-                            <div class="spotify-method-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
-                                <div class="spotify-method-title">💻 Conectar desde esta Computadora</div>
-                                <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 16px;">
-                                    Abre la pantalla oficial de autorización de Spotify directamente en este navegador:
-                                </p>
-                                <button id="btnSpotifyAuth" class="btn-spotify" type="button" style="width: 100%; max-width: 240px; padding: 0.75rem 1.2rem; font-size: 0.92rem;">
-                                    Iniciar Sesión en esta PC
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Nota importante de configuración de Redirect URIs -->
-                        <div style="margin-top: 1.2rem; padding: 10px 14px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 10px; font-size: 0.8rem; color: #ccc;">
-                            💡 <strong>Recordatorio importante:</strong> Tu app en <a href="https://developer.spotify.com/dashboard" target="_blank" style="color: var(--primary);">developer.spotify.com</a> debe tener agregada en sus <em>Settings &gt; Redirect URIs</em> la dirección exacta:
-                            <br><code style="color: #10b981;">http://localhost:3000/api/spotify/callback</code>
-                        </div>
-
-                        <div style="margin-top: 1rem; text-align: center;">
-                            <button id="btnEditSpotifyCreds" class="btn-link" type="button" style="font-size: 0.8rem; color: var(--text-muted); background: none; border: none; text-decoration: underline; cursor: pointer;">
-                                ⚙ Cambiar credenciales de Spotify Developer
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Estado: Autenticado y conectado a Spotify -->
-                <div id="spotifyConnectedBox" class="spotify-connected-box hide">
-                    <!-- Barra de perfil de Spotify -->
-                    <div class="spotify-user-bar">
-                        <div class="spotify-user-info">
-                            <img id="spotifyUserAvatar" src="" class="spotify-avatar hide" alt="Avatar">
-                            <div>
-                                <div style="font-size: 0.75rem; color: #10b981; text-transform: uppercase; font-weight: 700;">
-                                    Spotify Personal de <span id="spotifyChatProfileBadge"></span>
-                                </div>
-                                <strong id="spotifyUserName" style="color: #fff; font-size: 0.95rem;"></strong>
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 8px;">
-                            <button id="btnSpotifyDisconnect" class="btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" type="button">
-                                Desconectar
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Subpestañas de contenido Spotify: Liked Songs vs Playlists -->
-                    <div class="spotify-subtabs" style="margin: 1rem 0; display: flex; gap: 8px;">
-                        <button id="btnSpotifyLikedTab" class="btn-secondary active-subtab" type="button" style="flex: 1;">
-                            💚 Canciones que me gustan (<span id="spotifyLikedCount">0</span>)
-                        </button>
-                        <button id="btnSpotifyPlaylistsTab" class="btn-secondary" type="button" style="flex: 1;">
-                            📁 Mis Playlists (<span id="spotifyPlaylistsCount">0</span>)
-                        </button>
-                    </div>
-
-                    <!-- Selector de playlists (si se activa la pestaña de playlists) -->
-                    <div id="spotifyPlaylistsDropdownWrap" class="form-group hide" style="margin-bottom: 0.8rem;">
-                        <label for="spotifyPlaylistSelect">Seleccionar Playlist de Spotify</label>
-                        <select id="spotifyPlaylistSelect"></select>
-                    </div>
-
-                    <!-- Cabecera de tracks de Spotify y acción de descarga masiva -->
-                    <div id="spotifyTracksHeader" class="search-controls-bar hide" style="margin-bottom: 0.6rem;">
-                        <span id="spotifyTracksCountText"></span>
-                        <div style="display: flex; gap: 8px; align-items: center;">
-                            <button id="btnBatchUploadSpotify" class="btn-spotify" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; width: auto;" type="button">
-                                ⚡ Subir Todas al Chat
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Lista de canciones de Spotify -->
-                    <div id="spotifyTracksList" class="search-results-grid">
-                        <div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Cargando tu biblioteca de Spotify...</div>
-                    </div>
                 </div>
             </div>
 

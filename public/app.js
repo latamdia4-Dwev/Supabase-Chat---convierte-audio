@@ -2,19 +2,15 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.6.0
- * Descripción: Lógica del cliente con:
- *              - Vinculación de Spotify personal por perfil (Marko o cualquier usuario)
- *              - Soporte de Código QR para conexión inmediata desde el teléfono móvil
- *              - Polling reactivo para auto-conexión al escanear el QR
- *              - Búsqueda automática en YouTube de canciones de Spotify
- *              - Conversión directa de canciones y listas completas de Spotify
- *              - Búsqueda extendida de YouTube (15, 25, 40 resultados)
- *              - Barra de pre-escucha interactiva para verificar audio antes de subir
- *              - Prevención de errores de respuesta HTML (safeFetchJson)
- *              - Login idéntico al chat (sin invitados)
- *              - Detección de canciones similares con modal comparador
+ * Versión: 1.8.0
+ * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
+ *              - Login idéntico al chat con lista completa de usuarios en botón ▾ (sin invitados)
+ *              - Búsqueda extendida en YouTube (15, 25, 40 resultados)
+ *              - Barra interactiva de pre-escucha para verificar audio antes de subir
+ *              - Soporte para enlaces directos y listas de reproducción (Playlists)
+ *              - Detección de canciones similares con modal comparador visual
  *              - Grupos de álbumes y eliminación directa en Supabase
+ *              - Prevención de errores de respuesta HTML (safeFetchJson)
  * ============================================================================
  */
 
@@ -29,12 +25,6 @@ let myTracksCache = [];
 let collapsedAlbums = new Set();
 let currentLoadedVideoId = null;
 
-// Estado de Spotify
-let spotifyCurrentMode = 'liked'; // 'liked' o 'playlists'
-let spotifyCurrentTracks = [];
-let spotifyCurrentPlaylistTitle = 'Spotify';
-let spotifyQrPollingTimer = null;
-
 /**
  * Función robusta para realizar fetch esperando JSON, evitando errores de 'Unexpected token <'
  */
@@ -43,7 +33,7 @@ async function safeFetchJson(url, options = {}) {
     try {
         res = await fetch(url, options);
     } catch (netErr) {
-        throw new Error('No se pudo comunicar con el servidor local. Verifica que la consola tenga corriendo "npm start".');
+        throw new Error('No se pudo comunicar con el servidor local. Verifica que la terminal tenga corriendo "npm start".');
     }
 
     const contentType = res.headers.get('content-type') || '';
@@ -93,31 +83,23 @@ $('showLoginLink').onclick = () => {
     $('accountUsernameInput').focus();
 };
 
+/**
+ * Obtener la lista completa de todos los usuarios registrados del chat
+ */
 async function fetchUsernames() {
     if (cachedUsernames) return cachedUsernames;
     try {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=username,is_admin&order=username.asc`, {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=username&order=username.asc`, {
             headers: {
                 apikey: SUPABASE_ANON_KEY,
                 Authorization: `Bearer ${SUPABASE_ANON_KEY}`
             }
         });
         const data = response.ok ? await response.json() : [];
-        // Filtrar estrictamente: solo 'Marko' y usuarios con is_admin === true
-        // Todos los demás usuarios quedan ocultos para proteger su privacidad
-        cachedUsernames = Array.isArray(data) 
-            ? data
-                .filter(p => p && ((p.username || '').toLowerCase() === 'marko' || p.is_admin === true))
-                .map(p => p.username)
-                .filter(Boolean)
-            : ['Marko'];
-
-        if (!cachedUsernames.includes('Marko')) {
-            cachedUsernames.unshift('Marko');
-        }
+        cachedUsernames = Array.isArray(data) ? data.map(p => p.username).filter(Boolean) : [];
     } catch (e) {
         console.error('Error al obtener lista de usuarios:', e);
-        cachedUsernames = ['Marko'];
+        cachedUsernames = [];
     }
     return cachedUsernames;
 }
@@ -132,7 +114,7 @@ $('btnUsersToggle').onclick = async () => {
     if (list.length > 0) {
         sel.innerHTML = list.map(u => `<option value="${u.replace(/"/g, '&quot;')}">${u.replace(/</g, '&lt;')}</option>`).join('');
     } else {
-        sel.innerHTML = '<option disabled>Sin usuarios disponibles</option>';
+        sel.innerHTML = '<option disabled>Sin usuarios registrados</option>';
     }
     sel.classList.remove('hide');
 };
@@ -142,8 +124,6 @@ $('userDropdownSelect').onchange = (e) => {
     e.target.classList.add('hide');
     $('accountPasswordInput').focus();
 };
-
-let currentUserIsMarkoOrAdmin = false;
 
 async function handleLogin() {
     const username = $('accountUsernameInput').value.trim();
@@ -166,45 +146,14 @@ async function handleLogin() {
         const session = (await supabaseClient.auth.getSession()).data.session;
         currentAccessToken = session ? session.access_token : null;
 
-        // Comprobar rol de usuario: Marko o admin
-        let isAdmin = false;
-        try {
-            const { data: prof } = await supabaseClient
-                .from('profiles')
-                .select('is_admin')
-                .eq('id', user.id)
-                .single();
-            if (prof && prof.is_admin === true) isAdmin = true;
-        } catch (e) {}
-
-        const isMarko = (username.toLowerCase() === 'marko');
-        currentUserIsMarkoOrAdmin = isMarko || isAdmin;
-
-        // Control de visibilidad del nombre y de Spotify
         $('currentUsernameText').textContent = username;
-        $('spotifyTargetUserLabel').textContent = `@${username}`;
-        $('spotifyChatProfileBadge').textContent = `@${username}`;
-
-        // Mostrar u ocultar pestaña de Spotify: SOLO PARA MARKO O ADMINISTRADORES
-        if (currentUserIsMarkoOrAdmin) {
-            $('tabModeSpotify').style.display = '';
-        } else {
-            $('tabModeSpotify').style.display = 'none';
-            // Si estaba en la pestaña de Spotify, volver a la búsqueda de YouTube
-            setActiveNavTab('tabModeSearch', 'viewSearch');
-        }
-
         $('lockOverlay').style.display = 'none';
         $('appCard').classList.remove('hide');
 
-        logEvent(`Sesión iniciada como @${username}${currentUserIsMarkoOrAdmin ? ' (Acceso a Spotify habilitado)' : ''}`, 'success');
+        logEvent(`Sesión iniciada como @${username}`, 'success');
 
         await loadAlbumsDataList();
         await loadUploadedTracks();
-
-        if (currentUserIsMarkoOrAdmin) {
-            await checkSpotifyStatus();
-        }
 
     } catch (err) {
         showLockError(err.message || 'Usuario o contraseña incorrectos.');
@@ -256,7 +205,6 @@ $('registerPasswordInput').addEventListener('keydown', (e) => {
 });
 
 $('btnLogout').onclick = async () => {
-    if (spotifyQrPollingTimer) clearInterval(spotifyQrPollingTimer);
     await supabaseClient.auth.signOut();
     location.reload();
 };
@@ -285,27 +233,18 @@ function logEvent(message, type = 'info') {
     consoleBox.scrollTop = consoleBox.scrollHeight;
 }
 
-function setActiveNavTab(activeTabId, activeViewId) {
-    const tabs = ['tabModeSearch', 'tabModeDirect', 'tabModeSpotify'];
-    const views = ['viewSearch', 'viewDirect', 'viewSpotify'];
+$('tabModeSearch').onclick = () => {
+    $('tabModeSearch').classList.add('active');
+    $('tabModeDirect').classList.remove('active');
+    $('viewSearch').classList.remove('hide');
+    $('viewDirect').classList.add('hide');
+};
 
-    tabs.forEach(t => $(t).classList.remove('active'));
-    views.forEach(v => $(v).classList.add('hide'));
-
-    $(activeTabId).classList.add('active');
-    $(activeViewId).classList.remove('hide');
-
-    if (activeTabId !== 'tabModeSpotify' && spotifyQrPollingTimer) {
-        clearInterval(spotifyQrPollingTimer);
-        spotifyQrPollingTimer = null;
-    }
-}
-
-$('tabModeSearch').onclick = () => setActiveNavTab('tabModeSearch', 'viewSearch');
-$('tabModeDirect').onclick = () => setActiveNavTab('tabModeDirect', 'viewDirect');
-$('tabModeSpotify').onclick = () => {
-    setActiveNavTab('tabModeSpotify', 'viewSpotify');
-    checkSpotifyStatus();
+$('tabModeDirect').onclick = () => {
+    $('tabModeDirect').classList.add('active');
+    $('tabModeSearch').classList.remove('active');
+    $('viewDirect').classList.remove('hide');
+    $('viewSearch').classList.add('hide');
 };
 
 // ══════════════════════════════════════════════════════════════════════
@@ -335,13 +274,9 @@ $('btnClosePreviewBar').onclick = closePreview;
 // 4. BUSCADOR EXTENDIDO DE YOUTUBE (HASTA 40 RESULTADOS CON PRE-ESCUCHA)
 // ══════════════════════════════════════════════════════════════════════
 
-async function searchYouTube(forcedQuery = null) {
-    const query = forcedQuery || $('ytSearchInput').value.trim();
+async function searchYouTube() {
+    const query = $('ytSearchInput').value.trim();
     if (!query) return;
-
-    if (forcedQuery) {
-        $('ytSearchInput').value = forcedQuery;
-    }
 
     const limit = parseInt($('ytSearchLimitSelect').value, 10) || 25;
     const btn = $('btnYtSearch');
@@ -445,7 +380,7 @@ async function searchYouTube(forcedQuery = null) {
     }
 }
 
-$('btnYtSearch').onclick = () => searchYouTube();
+$('btnYtSearch').onclick = searchYouTube;
 $('ytSearchInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') searchYouTube();
 });
@@ -815,436 +750,7 @@ $('btnConvertAndUpload').onclick = async () => {
 };
 
 // ══════════════════════════════════════════════════════════════════════
-// 8. INTEGRACIÓN CON SPOTIFY (PERSONAL POR PERFIL Y CÓDIGO QR)
-// ══════════════════════════════════════════════════════════════════════
-
-async function checkSpotifyStatus() {
-    if (!currentUserId || !currentUserIsMarkoOrAdmin) {
-        $('tabModeSpotify').style.display = 'none';
-        return;
-    }
-
-    try {
-        const data = await safeFetchJson(`/api/spotify/status?userId=${encodeURIComponent(currentUserId)}&username=${encodeURIComponent(currentUsername)}`);
-
-        if (data.restricted) {
-            $('tabModeSpotify').style.display = 'none';
-            setActiveNavTab('tabModeSearch', 'viewSearch');
-            return;
-        }
-
-        if (data.recommendedUris && data.recommendedUris.length >= 2) {
-            if ($('uriLocalCopy')) $('uriLocalCopy').textContent = data.recommendedUris[0];
-            if ($('uriWifiCopy')) $('uriWifiCopy').textContent = data.recommendedUris[1];
-        }
-
-        if (data.clientId && $('spotifyInputClientId')) {
-            $('spotifyInputClientId').value = data.clientId;
-        }
-
-        if (!data.configured) {
-            $('spotifySetupBox').classList.remove('hide');
-            $('spotifyLoginBox').classList.add('hide');
-            $('spotifyConnectedBox').classList.add('hide');
-            if (spotifyQrPollingTimer) clearInterval(spotifyQrPollingTimer);
-            return;
-        }
-
-        if (!data.authenticated) {
-            $('spotifySetupBox').classList.add('hide');
-            $('spotifyLoginBox').classList.remove('hide');
-            $('spotifyConnectedBox').classList.add('hide');
-
-            // Cargar Código QR para celular
-            loadSpotifyQr();
-
-            // Iniciar sondeo (polling) para detectar si se autenticó desde el celular
-            startSpotifyQrPolling();
-            return;
-        }
-
-        // Usuario autenticado con su Spotify personal
-        if (spotifyQrPollingTimer) {
-            clearInterval(spotifyQrPollingTimer);
-            spotifyQrPollingTimer = null;
-        }
-
-        $('spotifySetupBox').classList.add('hide');
-        $('spotifyLoginBox').classList.add('hide');
-        $('spotifyConnectedBox').classList.remove('hide');
-
-        const user = data.user;
-        $('spotifyUserName').textContent = user ? (user.display_name || user.id) : 'Spotify Personal';
-        $('spotifyChatProfileBadge').textContent = `@${currentUsername}`;
-
-        const avatarImg = $('spotifyUserAvatar');
-        if (user && user.images && user.images.length > 0) {
-            avatarImg.src = user.images[0].url;
-            avatarImg.classList.remove('hide');
-        } else {
-            avatarImg.classList.add('hide');
-        }
-
-        // Cargar canciones y playlists del usuario
-        await loadSpotifyLikedTracks();
-        await loadSpotifyPlaylists();
-
-    } catch (err) {
-        console.error('Error al verificar estado de Spotify:', err);
-    }
-}
-
-// Botón de autenticación directa en la PC
-$('btnSpotifyAuth').onclick = () => {
-    if (!currentUserId) {
-        alert('Debes iniciar sesión con tu cuenta de chat primero.');
-        return;
-    }
-    window.location.href = `/api/spotify/login?userId=${encodeURIComponent(currentUserId)}&username=${encodeURIComponent(currentUsername)}`;
-};
-
-if ($('btnCopyUris')) {
-    $('btnCopyUris').onclick = () => {
-        const u1 = $('uriLocalCopy').textContent;
-        const u2 = $('uriWifiCopy').textContent;
-        navigator.clipboard.writeText(`${u1}\n${u2}`);
-        const prev = $('btnCopyUris').textContent;
-        $('btnCopyUris').textContent = '✔ ¡Copiadas al portapapeles!';
-        setTimeout(() => { $('btnCopyUris').textContent = prev; }, 2000);
-    };
-}
-
-async function loadSpotifyQr() {
-    const qrImg = $('spotifyQrImg');
-    const loading = $('spotifyQrLoading');
-    try {
-        const data = await safeFetchJson(`/api/spotify/qr?userId=${encodeURIComponent(currentUserId)}&username=${encodeURIComponent(currentUsername)}`);
-        if (data.qrDataUrl) {
-            qrImg.src = data.qrDataUrl;
-            qrImg.classList.remove('hide');
-            loading.classList.add('hide');
-        }
-    } catch (e) {
-        loading.textContent = 'No se pudo generar el QR: ' + e.message;
-    }
-}
-
-function startSpotifyQrPolling() {
-    if (spotifyQrPollingTimer) clearInterval(spotifyQrPollingTimer);
-
-    // Sondeo cada 2.5 segundos mientras esté en pantalla de vinculación
-    spotifyQrPollingTimer = setInterval(async () => {
-        if (!currentUserId || $('spotifyLoginBox').classList.contains('hide')) {
-            clearInterval(spotifyQrPollingTimer);
-            return;
-        }
-
-        try {
-            const data = await safeFetchJson(`/api/spotify/status?userId=${encodeURIComponent(currentUserId)}`);
-            if (data.authenticated) {
-                clearInterval(spotifyQrPollingTimer);
-                spotifyQrPollingTimer = null;
-                logEvent('✔ ¡Spotify vinculado exitosamente desde tu dispositivo móvil!', 'success');
-                checkSpotifyStatus();
-            }
-        } catch (e) {}
-    }, 2500);
-}
-
-$('btnSaveSpotifyCreds').onclick = async () => {
-    const clientId = $('spotifyInputClientId').value.trim();
-    const clientSecret = $('spotifyInputClientSecret').value.trim();
-
-    if (!clientId || !clientSecret) {
-        alert('Debes ingresar tanto el Client ID como el Client Secret.');
-        return;
-    }
-
-    try {
-        $('btnSaveSpotifyCreds').disabled = true;
-        $('btnSaveSpotifyCreds').textContent = 'Guardando...';
-
-        await safeFetchJson('/api/spotify/save-credentials', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clientId, clientSecret })
-        });
-
-        logEvent('Credenciales de Spotify guardadas correctamente.', 'success');
-        await checkSpotifyStatus();
-    } catch (err) {
-        alert('Error al guardar credenciales: ' + err.message);
-    } finally {
-        $('btnSaveSpotifyCreds').disabled = false;
-        $('btnSaveSpotifyCreds').textContent = '💾 Guardar Credenciales de Spotify';
-    }
-};
-
-$('btnEditSpotifyCreds').onclick = () => {
-    $('spotifyLoginBox').classList.add('hide');
-    $('spotifySetupBox').classList.remove('hide');
-};
-
-$('btnSpotifyDisconnect').onclick = async () => {
-    try {
-        await safeFetchJson('/api/spotify/disconnect', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUserId })
-        });
-        logEvent('Sesión de Spotify desconectada para tu perfil.', 'info');
-        await checkSpotifyStatus();
-    } catch (e) {
-        alert('Error al desconectar Spotify: ' + e.message);
-    }
-};
-
-$('btnSpotifyLikedTab').onclick = () => {
-    spotifyCurrentMode = 'liked';
-    $('btnSpotifyLikedTab').classList.add('active-subtab');
-    $('btnSpotifyPlaylistsTab').classList.remove('active-subtab');
-    $('spotifyPlaylistsDropdownWrap').classList.add('hide');
-    loadSpotifyLikedTracks();
-};
-
-$('btnSpotifyPlaylistsTab').onclick = () => {
-    spotifyCurrentMode = 'playlists';
-    $('btnSpotifyPlaylistsTab').classList.add('active-subtab');
-    $('btnSpotifyLikedTab').classList.remove('active-subtab');
-    $('spotifyPlaylistsDropdownWrap').classList.remove('hide');
-    if ($('spotifyPlaylistSelect').value) {
-        loadSpotifyPlaylistTracks($('spotifyPlaylistSelect').value);
-    }
-};
-
-async function loadSpotifyLikedTracks() {
-    const list = $('spotifyTracksList');
-    list.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Cargando tus canciones de Spotify...</div>';
-    $('spotifyTracksHeader').classList.add('hide');
-
-    try {
-        const data = await safeFetchJson(`/api/spotify/saved-tracks?userId=${encodeURIComponent(currentUserId)}&limit=50`);
-        spotifyCurrentTracks = data.tracks || [];
-        spotifyCurrentPlaylistTitle = 'Spotify Liked';
-        $('spotifyLikedCount').textContent = data.total || spotifyCurrentTracks.length;
-
-        renderSpotifyTracks(spotifyCurrentTracks, 'Canciones que te gustan');
-    } catch (err) {
-        list.innerHTML = `<div style="color: var(--danger); padding: 1rem;">Error al cargar canciones: ${err.message}</div>`;
-    }
-}
-
-async function loadSpotifyPlaylists() {
-    try {
-        const data = await safeFetchJson(`/api/spotify/playlists?userId=${encodeURIComponent(currentUserId)}`);
-        const playlists = data.playlists || [];
-        $('spotifyPlaylistsCount').textContent = data.total || playlists.length;
-
-        const sel = $('spotifyPlaylistSelect');
-        if (playlists.length > 0) {
-            sel.innerHTML = playlists.map(p => `<option value="${p.id}">${p.name} (${p.trackCount} temas)</option>`).join('');
-            sel.onchange = () => {
-                loadSpotifyPlaylistTracks(sel.value);
-            };
-        } else {
-            sel.innerHTML = '<option disabled>Sin playlists creadas</option>';
-        }
-    } catch (e) {
-        console.warn('Error al cargar playlists:', e);
-    }
-}
-
-async function loadSpotifyPlaylistTracks(playlistId) {
-    if (!playlistId) return;
-    const list = $('spotifyTracksList');
-    list.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Cargando pistas de la playlist...</div>';
-    $('spotifyTracksHeader').classList.add('hide');
-
-    try {
-        const sel = $('spotifyPlaylistSelect');
-        const plName = sel.options[sel.selectedIndex]?.text.split(' (')[0] || 'Playlist Spotify';
-        spotifyCurrentPlaylistTitle = plName;
-
-        const data = await safeFetchJson(`/api/spotify/playlist/${playlistId}/tracks?userId=${encodeURIComponent(currentUserId)}`);
-        spotifyCurrentTracks = data.tracks || [];
-
-        renderSpotifyTracks(spotifyCurrentTracks, plName);
-    } catch (err) {
-        list.innerHTML = `<div style="color: var(--danger); padding: 1rem;">Error al cargar playlist: ${err.message}</div>`;
-    }
-}
-
-function renderSpotifyTracks(tracks, sourceName) {
-    const list = $('spotifyTracksList');
-    const header = $('spotifyTracksHeader');
-
-    if (!tracks || tracks.length === 0) {
-        list.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No se encontraron canciones en esta sección.</div>';
-        header.classList.add('hide');
-        return;
-    }
-
-    header.classList.remove('hide');
-    $('spotifyTracksCountText').textContent = `${tracks.length} canciones en "${sourceName}":`;
-
-    list.innerHTML = '';
-    tracks.forEach((track, index) => {
-        const item = document.createElement('div');
-        item.className = 'search-item';
-
-        const img = document.createElement('img');
-        img.className = 'spotify-track-thumb';
-        img.src = track.thumbnail || 'https://via.placeholder.com/48x48?text=SP';
-        img.alt = track.title;
-
-        const info = document.createElement('div');
-        info.className = 'search-info';
-
-        const title = document.createElement('div');
-        title.className = 'search-title';
-        title.textContent = `${index + 1}. ${track.title}`;
-        title.title = track.title;
-
-        const artist = document.createElement('div');
-        artist.className = 'search-channel';
-        artist.textContent = `${track.artist} • ${track.album || 'Sencillo'} (${track.durationString})`;
-
-        info.appendChild(title);
-        info.appendChild(artist);
-
-        const actions = document.createElement('div');
-        actions.className = 'search-actions';
-
-        // Botón 1: Buscar en YouTube
-        const btnSearchYt = document.createElement('button');
-        btnSearchYt.type = 'button';
-        btnSearchYt.className = 'search-btn-listen';
-        btnSearchYt.textContent = '🔎 YouTube';
-        btnSearchYt.title = 'Buscar en YouTube con vista previa';
-        btnSearchYt.onclick = () => {
-            setActiveNavTab('tabModeSearch', 'viewSearch');
-            searchYouTube(track.searchQuery);
-            $('albumInput').value = track.album || spotifyCurrentPlaylistTitle;
-        };
-
-        // Botón 2: Convertir directo
-        const btnUploadDirect = document.createElement('button');
-        btnUploadDirect.type = 'button';
-        btnUploadDirect.className = 'search-btn-select';
-        btnUploadDirect.textContent = '⚡ Subir';
-        btnUploadDirect.title = 'Buscar el mejor match en YouTube y subir al chat';
-
-        btnUploadDirect.onclick = async () => {
-            try {
-                btnUploadDirect.disabled = true;
-                btnUploadDirect.textContent = 'Buscando...';
-                logEvent(`Buscando mejor versión de "${track.title}" en YouTube...`, 'info');
-
-                const ytSearch = await safeFetchJson('/api/youtube-search', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query: track.searchQuery, limit: 5 })
-                });
-
-                if (!ytSearch.results || ytSearch.results.length === 0) {
-                    throw new Error(`No se encontró "${track.title}" en YouTube.`);
-                }
-
-                const bestMatch = ytSearch.results[0];
-                logEvent(`Mejor coincidencia encontrada: "${bestMatch.title}"`, 'info');
-
-                const destAlbum = track.album || spotifyCurrentPlaylistTitle;
-                const match = findSimilarTrack(track.title);
-
-                if (match) {
-                    showSimilarityModal(track.title, destAlbum, match.track, () => {
-                        executeUpload(bestMatch.url, track.title, destAlbum);
-                    });
-                } else {
-                    await executeUpload(bestMatch.url, track.title, destAlbum);
-                }
-
-            } catch (err) {
-                logEvent(`✘ Error al procesar "${track.title}": ${err.message}`, 'error');
-            } finally {
-                btnUploadDirect.disabled = false;
-                btnUploadDirect.textContent = '⚡ Subir';
-            }
-        };
-
-        actions.appendChild(btnSearchYt);
-        actions.appendChild(btnUploadDirect);
-
-        item.appendChild(img);
-        item.appendChild(info);
-        item.appendChild(actions);
-
-        list.appendChild(item);
-    });
-}
-
-// Subida masiva de Spotify al chat
-$('btnBatchUploadSpotify').onclick = async () => {
-    if (!spotifyCurrentTracks || spotifyCurrentTracks.length === 0) return;
-
-    const confirmed = confirm(`¿Deseas convertir y subir las ${spotifyCurrentTracks.length} canciones al álbum "${spotifyCurrentPlaylistTitle}" en tu perfil?`);
-    if (!confirmed) return;
-
-    const btn = $('btnBatchUploadSpotify');
-    btn.disabled = true;
-    logEvent(`Iniciando migración masiva de Spotify: ${spotifyCurrentTracks.length} canciones...`, 'info');
-
-    let processedCount = 0;
-    for (let i = 0; i < spotifyCurrentTracks.length; i++) {
-        const t = spotifyCurrentTracks[i];
-        btn.textContent = `[${i + 1}/${spotifyCurrentTracks.length}] Subiendo...`;
-        logEvent(`[${i + 1}/${spotifyCurrentTracks.length}] Buscando en YouTube: "${t.title} - ${t.artist}"...`, 'info');
-
-        try {
-            const ytSearch = await safeFetchJson('/api/youtube-search', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: t.searchQuery, limit: 3 })
-            });
-
-            if (!ytSearch.results || ytSearch.results.length === 0) {
-                logEvent(`▲ No se encontró en YouTube: "${t.title}". Omitiendo.`, 'warn');
-                continue;
-            }
-
-            const best = ytSearch.results[0];
-            const sessionRes = await supabaseClient.auth.getSession();
-            const token = sessionRes.data?.session?.access_token || currentAccessToken;
-
-            await safeFetchJson('/api/convert-and-upload', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url: best.url,
-                    album: t.album || spotifyCurrentPlaylistTitle,
-                    customTitle: t.title,
-                    accessToken: token,
-                    userId: currentUserId
-                })
-            });
-
-            processedCount++;
-            logEvent(`✔ [${i + 1}/${spotifyCurrentTracks.length}] "${t.title}" convertida y subida.`, 'success');
-        } catch (e) {
-            logEvent(`✘ Error en "${t.title}": ${e.message}`, 'error');
-        }
-    }
-
-    logEvent(`Proceso de Spotify finalizado: ${processedCount} canciones transferidas al chat.`, 'success');
-    btn.disabled = false;
-    btn.textContent = '⚡ Subir Todas al Chat';
-
-    await loadAlbumsDataList();
-    await loadUploadedTracks();
-};
-
-// ══════════════════════════════════════════════════════════════════════
-// 9. GESTIÓN Y RENDERIZADO DE ÁLBUMES (IDÉNTICO AL CHAT ORIGINAL)
+// 8. GESTIÓN Y RENDERIZADO DE ÁLBUMES (IDÉNTICO AL CHAT ORIGINAL)
 // ══════════════════════════════════════════════════════════════════════
 
 async function loadAlbumsDataList() {
@@ -1460,23 +966,3 @@ $('btnCollapseAllAlbums').onclick = () => {
 };
 
 $('filterTracksInput').addEventListener('input', renderAlbumsView);
-
-// ══════════════════════════════════════════════════════════════════════
-// 10. DETECCIÓN DE RETORNO OAUTH DE SPOTIFY AL CARGAR
-// ══════════════════════════════════════════════════════════════════════
-window.addEventListener('DOMContentLoaded', () => {
-    const hash = window.location.hash || '';
-    if (hash.includes('spotify_success=1')) {
-        history.replaceState(null, '', window.location.pathname);
-        setTimeout(() => {
-            logEvent('✔ ¡Cuenta de Spotify vinculada exitosamente!', 'success');
-            checkSpotifyStatus();
-        }, 500);
-    } else if (hash.includes('spotify_error=')) {
-        const errParam = new URLSearchParams(hash.substring(1)).get('spotify_error');
-        history.replaceState(null, '', window.location.pathname);
-        setTimeout(() => {
-            logEvent(`✘ Error al vincular con Spotify: ${decodeURIComponent(errParam || '')}`, 'error');
-        }, 500);
-    }
-});
