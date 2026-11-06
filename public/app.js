@@ -321,6 +321,25 @@ function updatePlayingPreviewHighlight() {
     }
 }
 
+let isPreviewExpanded = false;
+
+function toggleExpandPreview() {
+    isPreviewExpanded = !isPreviewExpanded;
+    const bar = $('previewFixedBar');
+    const btn = $('btnToggleExpandPreview');
+    if (!bar || !btn) return;
+
+    if (isPreviewExpanded) {
+        bar.classList.add('preview-expanded');
+        btn.innerHTML = '🗗 Reducir';
+        btn.title = 'Volver al reproductor compacto (solo audio)';
+    } else {
+        bar.classList.remove('preview-expanded');
+        btn.innerHTML = '⛶ Ver video';
+        btn.title = 'Expandir para ver el video completo';
+    }
+}
+
 function playPreview(videoId, title) {
     if (!videoId) return;
     currentPlayingVideoId = videoId;
@@ -336,15 +355,259 @@ function playPreview(videoId, title) {
 
 function closePreview() {
     currentPlayingVideoId = null;
+    isPreviewExpanded = false;
     const bar = $('previewFixedBar');
     const wrap = $('previewIframeWrap');
+    const btn = $('btnToggleExpandPreview');
+    if (btn) btn.innerHTML = '⛶ Ver video';
     wrap.innerHTML = '';
+    bar.classList.remove('preview-expanded');
     bar.classList.add('hide');
 
     updatePlayingPreviewHighlight();
 }
 
 $('btnClosePreviewBar').onclick = closePreview;
+if ($('btnToggleExpandPreview')) {
+    $('btnToggleExpandPreview').onclick = toggleExpandPreview;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 3.5. SISTEMA DE COLA DE DESCARGA (QUEUE SYSTEM)
+// ══════════════════════════════════════════════════════════════════════
+
+const downloadQueue = [];
+let isQueueProcessing = false;
+let isQueueMinimized = false;
+
+function addToDownloadQueue(item) {
+    if (!item || !item.url) return;
+
+    // Verificar si ya está en la cola pendiente o procesándose
+    const existing = downloadQueue.find(q => q.url === item.url && (q.status === 'pending' || q.status === 'processing'));
+    if (existing) {
+        logEvent(`La canción "${item.title}" ya está en la cola de descarga.`, 'warn');
+        showQueuePanel();
+        return;
+    }
+
+    const queueId = 'queue_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const queueItem = {
+        id: queueId,
+        url: item.url,
+        title: item.title || 'Canción de YouTube',
+        album: item.album || null,
+        thumbnail: item.thumbnail || 'https://i.ytimg.com/vi/hqdefault.jpg',
+        durationString: item.durationString || '',
+        status: 'pending', // 'pending' | 'processing' | 'completed' | 'error'
+        errorMsg: null
+    };
+
+    downloadQueue.push(queueItem);
+    showQueuePanel();
+    renderDownloadQueue();
+    logEvent(`➕ Añadida a la cola: "${queueItem.title}" (Posición #${downloadQueue.filter(q => q.status === 'pending').length})`, 'info');
+
+    // Iniciar el procesamiento automático si no está activo
+    if (!isQueueProcessing) {
+        processDownloadQueue();
+    }
+}
+
+function showQueuePanel() {
+    const panel = $('downloadQueuePanel');
+    if (panel) {
+        panel.classList.remove('hide');
+    }
+}
+
+function toggleQueueMinimize() {
+    const panel = $('downloadQueuePanel');
+    const btn = $('btnToggleQueueMinimize');
+    if (!panel || !btn) return;
+
+    isQueueMinimized = !isQueueMinimized;
+    if (isQueueMinimized) {
+        panel.classList.add('minimized');
+        btn.textContent = '+';
+        btn.title = 'Expandir cola';
+    } else {
+        panel.classList.remove('minimized');
+        btn.textContent = '−';
+        btn.title = 'Minimizar cola';
+    }
+}
+
+function removeFromDownloadQueue(queueId) {
+    const idx = downloadQueue.findIndex(q => q.id === queueId);
+    if (idx !== -1) {
+        const item = downloadQueue[idx];
+        if (item.status === 'processing') {
+            logEvent(`No se puede eliminar "${item.title}" porque ya se está descargando.`, 'warn');
+            return;
+        }
+        downloadQueue.splice(idx, 1);
+        renderDownloadQueue();
+        logEvent(`Eliminada de la cola: "${item.title}"`, 'info');
+        if (downloadQueue.length === 0) {
+            $('downloadQueuePanel').classList.add('hide');
+        }
+    }
+}
+
+function clearCompletedDownloadQueue() {
+    const initialLen = downloadQueue.length;
+    for (let i = downloadQueue.length - 1; i >= 0; i--) {
+        if (downloadQueue[i].status === 'completed' || downloadQueue[i].status === 'error') {
+            downloadQueue.splice(i, 1);
+        }
+    }
+    renderDownloadQueue();
+    if (downloadQueue.length === 0) {
+        $('downloadQueuePanel').classList.add('hide');
+    }
+}
+
+function renderDownloadQueue() {
+    const panel = $('downloadQueuePanel');
+    const badge = $('queueCountBadge');
+    const container = $('queueListContainer');
+    if (!panel || !badge || !container) return;
+
+    const pendingCount = downloadQueue.filter(q => q.status === 'pending' || q.status === 'processing').length;
+    badge.textContent = pendingCount;
+
+    container.innerHTML = '';
+    if (downloadQueue.length === 0) {
+        return;
+    }
+
+    downloadQueue.forEach(item => {
+        const row = document.createElement('div');
+        row.className = `queue-item ${item.status}`;
+
+        const thumb = document.createElement('img');
+        thumb.className = 'queue-item-thumb';
+        thumb.src = item.thumbnail;
+        thumb.alt = item.title;
+
+        const info = document.createElement('div');
+        info.className = 'queue-item-info';
+
+        const title = document.createElement('div');
+        title.className = 'queue-item-title';
+        title.textContent = item.title;
+        title.title = item.title;
+
+        const status = document.createElement('div');
+        status.className = 'queue-item-status';
+
+        if (item.status === 'pending') {
+            status.innerHTML = '⏳ En espera...';
+        } else if (item.status === 'processing') {
+            status.innerHTML = '🔄 Descargando y convirtiendo...';
+        } else if (item.status === 'completed') {
+            status.innerHTML = '✔ Subida con éxito';
+        } else if (item.status === 'error') {
+            status.innerHTML = `❌ Error: ${item.errorMsg || 'Falló'}`;
+            status.title = item.errorMsg || '';
+        }
+
+        info.appendChild(title);
+        info.appendChild(status);
+
+        row.appendChild(thumb);
+        row.appendChild(info);
+
+        // Botón de eliminar si no está en proceso
+        if (item.status !== 'processing') {
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'queue-item-remove';
+            removeBtn.innerHTML = '✕';
+            removeBtn.title = 'Quitar de la cola';
+            removeBtn.onclick = (e) => {
+                e.stopPropagation();
+                removeFromDownloadQueue(item.id);
+            };
+            row.appendChild(removeBtn);
+        }
+
+        container.appendChild(row);
+    });
+}
+
+async function processDownloadQueue() {
+    if (isQueueProcessing) return;
+
+    const nextItem = downloadQueue.find(q => q.status === 'pending');
+    if (!nextItem) {
+        isQueueProcessing = false;
+        return;
+    }
+
+    isQueueProcessing = true;
+    nextItem.status = 'processing';
+    renderDownloadQueue();
+
+    logEvent(`[Cola] Iniciando descarga de: "${nextItem.title}"`, 'info');
+
+    try {
+        const sessionRes = await client.auth.getSession();
+        const token = sessionRes.data?.session?.access_token || currentAccessToken;
+
+        if (!token || !currentUserId) {
+            throw new Error('Sesión no disponible. Inicia sesión nuevamente.');
+        }
+
+        const result = await safeFetchJson('/api/convert-and-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                url: nextItem.url,
+                album: nextItem.album || null,
+                customTitle: nextItem.title,
+                accessToken: token,
+                userId: currentUserId
+            })
+        }, 180000);
+
+        nextItem.status = 'completed';
+        logEvent(`✔ [Cola] "${nextItem.title}" completada y agregada al perfil.`, 'success');
+
+        await loadAlbumsDataList();
+        await loadUploadedTracks();
+
+    } catch (err) {
+        nextItem.status = 'error';
+        nextItem.errorMsg = err.message || 'Error en conversión';
+        logEvent(`✘ [Cola] Error en "${nextItem.title}": ${err.message}`, 'error');
+    } finally {
+        isQueueProcessing = false;
+        renderDownloadQueue();
+
+        // Procesar siguiente item en la cola con pequeña pausa para no saturar
+        setTimeout(() => {
+            processDownloadQueue();
+        }, 800);
+    }
+}
+
+// Vinculación de controles de la cola
+if ($('btnClearCompletedQueue')) {
+    $('btnClearCompletedQueue').onclick = clearCompletedDownloadQueue;
+}
+if ($('btnToggleQueueMinimize')) {
+    $('btnToggleQueueMinimize').onclick = toggleQueueMinimize;
+}
+if ($('queueHeader')) {
+    $('queueHeader').onclick = (e) => {
+        if (!e.target.closest('.btn-queue-action')) {
+            toggleQueueMinimize();
+        }
+    };
+}
+
 
 // ══════════════════════════════════════════════════════════════════════
 // 4. BUSCADOR EXTENDIDO DE YOUTUBE (HASTA 40 RESULTADOS CON PRE-ESCUCHA)
@@ -456,6 +719,17 @@ async function searchYouTube() {
             convertDirectBtn.title = 'Convertir a MP3 y subir a mi perfil de inmediato';
 
             convertDirectBtn.onclick = () => {
+                if (isQueueProcessing) {
+                    addToDownloadQueue({
+                        url: item.url,
+                        title: item.cleanTitle || item.title,
+                        album: $('albumSelectInput').value.trim() || null,
+                        thumbnail: item.thumbnail,
+                        durationString: item.durationString
+                    });
+                    return;
+                }
+
                 currentLoadedVideoId = item.id;
                 $('youtubeUrlInput').value = item.url;
                 $('customTitleInput').value = item.cleanTitle || item.title;
@@ -470,8 +744,25 @@ async function searchYouTube() {
                 updatePlayingPreviewHighlight();
             };
 
+            // Botón Añadir a la Cola
+            const queueBtn = document.createElement('button');
+            queueBtn.type = 'button';
+            queueBtn.className = 'search-btn-queue';
+            queueBtn.innerHTML = '+ Cola';
+            queueBtn.title = 'Añadir a la cola de descargas';
+            queueBtn.onclick = () => {
+                addToDownloadQueue({
+                    url: item.url,
+                    title: item.cleanTitle || item.title,
+                    album: $('albumSelectInput').value.trim() || null,
+                    thumbnail: item.thumbnail,
+                    durationString: item.durationString
+                });
+            };
+
             actions.appendChild(listenBtn);
             actions.appendChild(selectBtn);
+            actions.appendChild(queueBtn);
             actions.appendChild(convertDirectBtn);
 
             row.appendChild(img);

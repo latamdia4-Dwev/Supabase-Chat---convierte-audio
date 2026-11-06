@@ -918,3 +918,260 @@ button:disabled {
         height: 60px;
     }
 }
+
+
+/* ─── Botón y Modo Expandido para Ver Video Completo de Previa ─── */
+.btn-expand-preview {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid #444 !important;
+    color: #e0e0e0 !important;
+    border-radius: 6px !important;
+    padding: 5px 11px !important;
+    font-size: 0.8rem !important;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-expand-preview:hover {
+    background: rgba(62, 207, 142, 0.15) !important;
+    border-color: var(--primary) !important;
+    color: var(--primary) !important;
+}
+
+.preview-bar-fixed.preview-expanded {
+    padding: 14px 1.5rem;
+    background-color: rgba(15, 18, 25, 0.98);
+}
+
+.preview-bar-fixed.preview-expanded .preview-bar-inner {
+    max-width: 860px;
+    flex-wrap: wrap;
+    justify-content: space-between;
+}
+
+.preview-bar-fixed.preview-expanded .preview-iframe-wrap {
+    width: 480px;
+    height: 270px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9);
+    border: 1px solid var(--border-color);
+    margin: 8px auto;
+    order: 3;
+    transition: width 0.3s ease, height 0.3s ease;
+}
+
+@media (max-width: 600px) {
+    .preview-bar-fixed.preview-expanded .preview-iframe-wrap {
+        width: 100%;
+        height: 200px;
+    }
+}
+
+/* ─── Panel Flotante de Cola de Descargas (Download Queue) ─── */
+.download-queue-panel {
+    position: fixed;
+    bottom: 74px;
+    right: 20px;
+    width: 360px;
+    max-width: calc(100vw - 32px);
+    background: #121620;
+    border: 1px solid #2d3748;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.85);
+    z-index: 9997;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.25s ease;
+}
+
+.download-queue-panel.minimized .queue-list-container {
+    display: none;
+}
+
+.queue-header {
+    background: #1a202c;
+    padding: 9px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #2d3748;
+    cursor: pointer;
+    user-select: none;
+}
+
+.queue-header:hover {
+    background: #1f2737;
+}
+
+.queue-header-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.queue-badge {
+    background: var(--primary);
+    color: #0b0f19;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.queue-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-queue-action {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid #444 !important;
+    color: #ccc !important;
+    border-radius: 6px !important;
+    width: 26px !important;
+    height: 26px !important;
+    padding: 0 !important;
+    font-size: 0.85rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.btn-queue-action:hover {
+    color: #fff !important;
+    border-color: #888 !important;
+    background: rgba(255, 255, 255, 0.15) !important;
+}
+
+.queue-list-container {
+    max-height: 270px;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.queue-list-container:empty::before {
+    content: "No hay descargas en la cola.";
+    color: #718096;
+    font-size: 0.82rem;
+    text-align: center;
+    padding: 1rem;
+}
+
+.queue-item {
+    background: #171d29;
+    border: 1px solid #283344;
+    border-radius: 8px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.82rem;
+    transition: all 0.2s ease;
+}
+
+.queue-item.processing {
+    border-color: var(--primary);
+    background: rgba(62, 207, 142, 0.08);
+    box-shadow: 0 0 10px rgba(62, 207, 142, 0.15);
+}
+
+.queue-item.completed {
+    opacity: 0.72;
+    border-color: #232b38;
+}
+
+.queue-item.error {
+    border-color: var(--danger);
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.queue-item-thumb {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.queue-item-info {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.queue-item-title {
+    color: #fff;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.queue-item-status {
+    font-size: 0.74rem;
+    color: #a0aec0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.queue-item.processing .queue-item-status {
+    color: #3ecf8e;
+    font-weight: 600;
+}
+
+.queue-item.error .queue-item-status {
+    color: #f87171;
+}
+
+.queue-item-remove {
+    background: transparent !important;
+    border: none !important;
+    color: #718096 !important;
+    font-size: 1rem !important;
+    cursor: pointer;
+    padding: 4px !important;
+    line-height: 1;
+    border-radius: 4px;
+}
+
+.queue-item-remove:hover {
+    color: #ef4444 !important;
+    background: rgba(239, 68, 68, 0.1) !important;
+}
+
+.search-btn-queue {
+    background: #3b82f6 !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 6px !important;
+    padding: 6px 10px !important;
+    font-size: 0.8rem !important;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    white-space: nowrap;
+}
+
+.search-btn-queue:hover {
+    background: #2563eb !important;
+}
