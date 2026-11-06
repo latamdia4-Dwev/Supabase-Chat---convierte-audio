@@ -1,6 +1,6 @@
 # Conversor YouTube y Spotify a MP3 - Supabase Chat
 
-**Versión:** 1.5.0  
+**Versión:** 1.6.0  
 **Arquitectura:** Node.js (Express), yt-dlp, FFmpeg, Cloudflare R2, Supabase Auth/DB, Spotify Web API & Render.com  
 
 ---
@@ -8,91 +8,51 @@
 ## 🎯 Descripción General
 Servicio integral y panel web moderno diseñado para sincronizar música desde **YouTube** y **Spotify** directamente con el perfil y almacenamiento del chat grupal en Supabase y Cloudflare R2.
 
-### ✨ Nuevas Características en la Versión 1.5.0
-1. **🟢 Integración Completa con Spotify**:
-   - Conexión vía OAuth 2.0 segura con tu cuenta de Spotify.
-   - Explorador de canciones guardadas (*Liked Songs*) y listas de reproducción personales (*Playlists*).
-   - Búsqueda inteligente en YouTube con un solo clic para cada pista de Spotify.
-   - Conversión directa individual o en lote (*Batch Transfer*) para subir álbumes enteros al chat.
-   - Asistente integrado para configurar credenciales de Spotify Developer sin tocar archivos.
-2. **🚀 Despliegue Automatizado en Render.com**:
-   - Archivo de infraestructura declarativa `render.yaml` (Blueprint).
-   - Script de aprovisionamiento multiplataforma `scripts/setup-binaries.js` ejecutado en el ciclo `postinstall` de npm.
-   - Detección dinámica de ejecutables nativos: Windows (`.exe`) y Linux (`x86_64`) con permisos automáticos (`0o755`).
-   - Soporte para variables de entorno y `trust proxy` para HTTPS en producción.
-3. **🔍 Búsqueda Extendida y Pre-escucha**:
-   - Resultados de hasta 40 canciones por búsqueda en YouTube.
-   - Barra flotante interactiva para escuchar la canción antes de convertirla o subirla.
-4. **🛡️ Resiliencia y Deduplicación**:
-   - Prevención de errores HTTP 403 Forbidden mediante resolución de n-tokens con `--js-runtimes node` y rotación de clientes (`android,web`, `web,android`, `mweb`).
-   - Deduplicación por hash SHA-256 en Cloudflare R2 mediante la RPC `find_active_track_by_hash`.
-   - Detección de canciones similares con modal comparador visual.
+### ✨ Novedades en la Versión 1.6.0
+1. **🟢 Spotify Personal Multi-Perfil**:
+   - Cada perfil de usuario (ej. `Marko` u otro usuario) conecta su **propia cuenta personal de Spotify** sin compartir ni mezclar sus canciones con otros perfiles.
+   - Las sesiones de Spotify se guardan de forma aislada y persistente en el servidor indexadas por `userId`.
+2. **📱 Vinculación Instantánea con Código QR**:
+   - Generación automática de Código QR en pantalla.
+   - El usuario escanea el QR desde su teléfono móvil y autoriza los permisos de Spotify en su celular.
+   - La pantalla de la computadora detecta automáticamente la vinculación en tiempo real sin recargar la página.
+3. **🛡️ Resiliencia de Puerto (Prevención de EADDRINUSE)**:
+   - Manejador nativo del evento `error` en el servidor con diagnóstico claro si el puerto 3000 ya está ocupado por otra terminal.
+4. **🚀 Preparado para Render.com**:
+   - Soporte nativo para Linux/Windows, `render.yaml` y script automático de postinstall.
 
 ---
 
-## 🚀 Despliegue en Render.com
+## 📱 ¿Cómo Conectar Spotify desde el Celular con QR?
 
-Para poner esta aplicación en internet en `dashboard.render.com`:
-
-### Opción A: Conectar Repositorio de GitHub (Recomendado)
-1. Sube este repositorio a tu cuenta de **GitHub**.
-2. Entra en tu panel de [dashboard.render.com](https://dashboard.render.com).
-3. Haz clic en **New +** y selecciona **Web Service**.
-4. Conecta tu repositorio de GitHub `Supabase-Chat - convierte audio`.
-5. Render detectará automáticamente `render.yaml` o configura:
-   - **Environment:** `Node`
-   - **Build Command:** `npm install` *(el script `scripts/setup-binaries.js` se ejecuta automáticamente por el postinstall y descarga los binarios de Linux)*
-   - **Start Command:** `node server.js`
-   - **Plan:** `Free`
-6. En la pestaña **Environment Variables**, puedes configurar de forma opcional:
-   - `SPOTIFY_CLIENT_ID`: Tu Client ID de Spotify.
-   - `SPOTIFY_CLIENT_SECRET`: Tu Client Secret de Spotify.
-   - `SPOTIFY_REDIRECT_URI`: `https://tu-servicio.onrender.com/api/spotify/callback`
-7. Haz clic en **Deploy Web Service**. ¡Listo!
+1. En la aplicación web, inicia sesión con tu perfil (ej. **Marko**).
+2. Ve a la pestaña **🟢 Mi Spotify**.
+3. Verás en pantalla el **Código QR de Conexión Personal**.
+4. Apunta con la cámara de tu teléfono móvil al QR.
+5. Se abrirá la autorización de Spotify en tu celular: presiona **Aceptar**.
+6. ¡Listo! La pantalla de tu computadora se conectará al instante y mostrará tus canciones y playlists.
 
 ---
 
-## 🟢 Configuración de Spotify
+## 💻 Solución al Error `listen EADDRINUSE: address already in use 0.0.0.0:3000`
 
-Para conectar tu cuenta de Spotify a la aplicación:
+Si al ejecutar `npm start` aparece este error en tu terminal:
+```
+Error: listen EADDRINUSE: address already in use 0.0.0.0:3000
+```
+Significa que hay otra ventana o proceso de Node.js corriendo en segundo plano que no ha cerrado el puerto 3000.
 
-1. Ve a [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) e inicia sesión con tu cuenta de Spotify.
-2. Haz clic en **Create app**:
-   - **App name:** `Conversor Chat Audio`
-   - **App description:** `Sincronizador de música para el chat`
-   - **Redirect URIs:** Agrega la URL indicada en la app:
-     - Local: `http://localhost:3000/api/spotify/callback`
-     - Render: `https://tu-servicio.onrender.com/api/spotify/callback`
-   - Marca la casilla de los términos de Spotify y guarda.
-3. En la sección **Settings** de tu app de Spotify, copia el **Client ID** y **Client Secret**.
-4. Pégalos en el panel de la aplicación en la pestaña **🟢 Mi Spotify** o colócalos en tu archivo `.env`.
-5. Presiona **Iniciar Sesión con Spotify** y autoriza los permisos.
-
----
-
-## 💻 Ejecución en Local (Windows)
-
-1. Instalar dependencias:
-   ```bash
-   npm install
-   ```
-2. Iniciar el servidor:
-   ```bash
-   npm start
-   ```
-3. Abre tu navegador en [http://localhost:3000](http://localhost:3000).
-
----
-
-## 🔐 Autenticación y Cuentas
-- La autenticación utiliza Supabase Auth conectado a la tabla `profiles` del chat.
-- Sin modo invitado: solo usuarios registrados pueden iniciar sesión y subir música.
-- Las contraseñas se validan contra el endpoint de Supabase Auth con dominio interno `@chatapp-users.com`.
+**Para solucionarlo de inmediato en PowerShell:**
+```powershell
+Stop-Process -Name node -Force
+npm start
+```
 
 ---
 
 ## 📜 Historial de Versiones
-- **v1.5.0**: Integración con Spotify (OAuth 2.0, Liked Songs, Playlists y migración a YouTube), soporte de despliegue en Render.com con `render.yaml` y descarga automática de binarios Linux.
+- **v1.6.0**: Soporte de Spotify personal por perfil con Código QR para conexión desde el móvil, persistencia de sesiones de usuario y prevención de errores de puerto ocupado (`EADDRINUSE`).
+- **v1.5.0**: Integración inicial con Spotify API (OAuth 2.0, Liked Songs, Playlists) y configuración de despliegue en Render.com (`render.yaml`).
 - **v1.4.0**: Búsqueda extendida (hasta 40 resultados), barra flotante de pre-escucha interactiva y selector dinámico.
 - **v1.3.0**: Mitigación de errores 403 de YouTube con `--js-runtimes node`, rotación de clientes y `safeFetchJson`.
 - **v1.2.0**: Login idéntico al chat, soporte de playlists, modal comparador de nombres similares y gestión de álbumes.

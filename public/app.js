@@ -2,9 +2,11 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.5.0
+ * Versión: 1.6.0
  * Descripción: Lógica del cliente con:
- *              - Integración con Spotify (OAuth 2.0, Liked Songs y Playlists)
+ *              - Vinculación de Spotify personal por perfil (Marko o cualquier usuario)
+ *              - Soporte de Código QR para conexión inmediata desde el teléfono móvil
+ *              - Polling reactivo para auto-conexión al escanear el QR
  *              - Búsqueda automática en YouTube de canciones de Spotify
  *              - Conversión directa de canciones y listas completas de Spotify
  *              - Búsqueda extendida de YouTube (15, 25, 40 resultados)
@@ -31,11 +33,12 @@ let currentLoadedVideoId = null;
 let spotifyCurrentMode = 'liked'; // 'liked' o 'playlists'
 let spotifyCurrentTracks = [];
 let spotifyCurrentPlaylistTitle = 'Spotify';
+let spotifyQrPollingTimer = null;
 
 /**
  * Función robusta para realizar fetch esperando JSON, evitando errores de 'Unexpected token <'
  */
-async function safeFetchJson(url, options) {
+async function safeFetchJson(url, options = {}) {
     let res = null;
     try {
         res = await fetch(url, options);
@@ -151,6 +154,9 @@ async function handleLogin() {
         currentAccessToken = session ? session.access_token : null;
 
         $('currentUsernameText').textContent = username;
+        $('spotifyTargetUserLabel').textContent = `@${username}`;
+        $('spotifyChatProfileBadge').textContent = `@${username}`;
+
         $('lockOverlay').style.display = 'none';
         $('appCard').classList.remove('hide');
 
@@ -210,6 +216,7 @@ $('registerPasswordInput').addEventListener('keydown', (e) => {
 });
 
 $('btnLogout').onclick = async () => {
+    if (spotifyQrPollingTimer) clearInterval(spotifyQrPollingTimer);
     await supabaseClient.auth.signOut();
     location.reload();
 };
@@ -247,6 +254,11 @@ function setActiveNavTab(activeTabId, activeViewId) {
 
     $(activeTabId).classList.add('active');
     $(activeViewId).classList.remove('hide');
+
+    if (activeTabId !== 'tabModeSpotify' && spotifyQrPollingTimer) {
+        clearInterval(spotifyQrPollingTimer);
+        spotifyQrPollingTimer = null;
+    }
 }
 
 $('tabModeSearch').onclick = () => setActiveNavTab('tabModeSearch', 'viewSearch');
@@ -763,12 +775,14 @@ $('btnConvertAndUpload').onclick = async () => {
 };
 
 // ══════════════════════════════════════════════════════════════════════
-// 8. INTEGRACIÓN CON SPOTIFY (OAUTH, BIBLIOTECA, PLAYLISTS, SUBIDA)
+// 8. INTEGRACIÓN CON SPOTIFY (PERSONAL POR PERFIL Y CÓDIGO QR)
 // ══════════════════════════════════════════════════════════════════════
 
 async function checkSpotifyStatus() {
+    if (!currentUserId) return;
+
     try {
-        const data = await safeFetchJson('/api/spotify/status');
+        const data = await safeFetchJson(`/api/spotify/status?userId=${encodeURIComponent(currentUserId)}`);
 
         $('spotifySuggestedRedirectUri').textContent = data.redirectUri;
 
@@ -776,6 +790,7 @@ async function checkSpotifyStatus() {
             $('spotifySetupBox').classList.remove('hide');
             $('spotifyLoginBox').classList.add('hide');
             $('spotifyConnectedBox').classList.add('hide');
+            if (spotifyQrPollingTimer) clearInterval(spotifyQrPollingTimer);
             return;
         }
 
@@ -783,16 +798,31 @@ async function checkSpotifyStatus() {
             $('spotifySetupBox').classList.add('hide');
             $('spotifyLoginBox').classList.remove('hide');
             $('spotifyConnectedBox').classList.add('hide');
+
+            // Configurar enlace para la computadora
+            $('btnSpotifyAuth').href = `/api/spotify/login?userId=${encodeURIComponent(currentUserId)}&username=${encodeURIComponent(currentUsername)}`;
+
+            // Cargar Código QR para celular
+            loadSpotifyQr();
+
+            // Iniciar sondeo (polling) para detectar si se autenticó desde el celular
+            startSpotifyQrPolling();
             return;
         }
 
-        // Usuario autenticado con Spotify
+        // Usuario autenticado con su Spotify personal
+        if (spotifyQrPollingTimer) {
+            clearInterval(spotifyQrPollingTimer);
+            spotifyQrPollingTimer = null;
+        }
+
         $('spotifySetupBox').classList.add('hide');
         $('spotifyLoginBox').classList.add('hide');
         $('spotifyConnectedBox').classList.remove('hide');
 
         const user = data.user;
-        $('spotifyUserName').textContent = user ? (user.display_name || user.id) : 'Usuario Spotify';
+        $('spotifyUserName').textContent = user ? (user.display_name || user.id) : 'Spotify Personal';
+        $('spotifyChatProfileBadge').textContent = `@${currentUsername}`;
 
         const avatarImg = $('spotifyUserAvatar');
         if (user && user.images && user.images.length > 0) {
@@ -802,13 +832,50 @@ async function checkSpotifyStatus() {
             avatarImg.classList.add('hide');
         }
 
-        // Cargar canciones que le gustan inicialmente
+        // Cargar canciones y playlists del usuario
         await loadSpotifyLikedTracks();
         await loadSpotifyPlaylists();
 
     } catch (err) {
         console.error('Error al verificar estado de Spotify:', err);
     }
+}
+
+async function loadSpotifyQr() {
+    const qrImg = $('spotifyQrImg');
+    const loading = $('spotifyQrLoading');
+    try {
+        const data = await safeFetchJson(`/api/spotify/qr?userId=${encodeURIComponent(currentUserId)}&username=${encodeURIComponent(currentUsername)}`);
+        if (data.qrDataUrl) {
+            qrImg.src = data.qrDataUrl;
+            qrImg.classList.remove('hide');
+            loading.classList.add('hide');
+        }
+    } catch (e) {
+        loading.textContent = 'No se pudo generar el QR: ' + e.message;
+    }
+}
+
+function startSpotifyQrPolling() {
+    if (spotifyQrPollingTimer) clearInterval(spotifyQrPollingTimer);
+
+    // Sondeo cada 2.5 segundos mientras esté en pantalla de vinculación
+    spotifyQrPollingTimer = setInterval(async () => {
+        if (!currentUserId || $('spotifyLoginBox').classList.contains('hide')) {
+            clearInterval(spotifyQrPollingTimer);
+            return;
+        }
+
+        try {
+            const data = await safeFetchJson(`/api/spotify/status?userId=${encodeURIComponent(currentUserId)}`);
+            if (data.authenticated) {
+                clearInterval(spotifyQrPollingTimer);
+                spotifyQrPollingTimer = null;
+                logEvent('✔ ¡Spotify vinculado exitosamente desde tu dispositivo móvil!', 'success');
+                checkSpotifyStatus();
+            }
+        } catch (e) {}
+    }, 2500);
 }
 
 $('btnSaveSpotifyCreds').onclick = async () => {
@@ -847,8 +914,12 @@ $('btnEditSpotifyCreds').onclick = () => {
 
 $('btnSpotifyDisconnect').onclick = async () => {
     try {
-        await safeFetchJson('/api/spotify/disconnect', { method: 'POST' });
-        logEvent('Sesión de Spotify cerrada.', 'info');
+        await safeFetchJson('/api/spotify/disconnect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUserId })
+        });
+        logEvent('Sesión de Spotify desconectada para tu perfil.', 'info');
         await checkSpotifyStatus();
     } catch (e) {
         alert('Error al desconectar Spotify: ' + e.message);
@@ -875,11 +946,11 @@ $('btnSpotifyPlaylistsTab').onclick = () => {
 
 async function loadSpotifyLikedTracks() {
     const list = $('spotifyTracksList');
-    list.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Cargando canciones que te gustan...</div>';
+    list.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Cargando tus canciones de Spotify...</div>';
     $('spotifyTracksHeader').classList.add('hide');
 
     try {
-        const data = await safeFetchJson('/api/spotify/saved-tracks?limit=50');
+        const data = await safeFetchJson(`/api/spotify/saved-tracks?userId=${encodeURIComponent(currentUserId)}&limit=50`);
         spotifyCurrentTracks = data.tracks || [];
         spotifyCurrentPlaylistTitle = 'Spotify Liked';
         $('spotifyLikedCount').textContent = data.total || spotifyCurrentTracks.length;
@@ -892,7 +963,7 @@ async function loadSpotifyLikedTracks() {
 
 async function loadSpotifyPlaylists() {
     try {
-        const data = await safeFetchJson('/api/spotify/playlists');
+        const data = await safeFetchJson(`/api/spotify/playlists?userId=${encodeURIComponent(currentUserId)}`);
         const playlists = data.playlists || [];
         $('spotifyPlaylistsCount').textContent = data.total || playlists.length;
 
@@ -921,7 +992,7 @@ async function loadSpotifyPlaylistTracks(playlistId) {
         const plName = sel.options[sel.selectedIndex]?.text.split(' (')[0] || 'Playlist Spotify';
         spotifyCurrentPlaylistTitle = plName;
 
-        const data = await safeFetchJson(`/api/spotify/playlist/${playlistId}/tracks`);
+        const data = await safeFetchJson(`/api/spotify/playlist/${playlistId}/tracks?userId=${encodeURIComponent(currentUserId)}`);
         spotifyCurrentTracks = data.tracks || [];
 
         renderSpotifyTracks(spotifyCurrentTracks, plName);

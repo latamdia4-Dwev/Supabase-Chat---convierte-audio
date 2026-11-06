@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor YouTube y Spotify a MP3 - Supabase Chat v1.5.0</title>
-    <!-- Estilos de la aplicación v1.5.0 -->
+    <title>Conversor YouTube y Spotify a MP3 - Supabase Chat v1.6.0</title>
+    <!-- Estilos de la aplicación v1.6.0 -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -119,16 +119,16 @@
                 </div>
             </div>
 
-            <!-- VISTA 3: Integración con Spotify (Biblioteca y Playlists) -->
+            <!-- VISTA 3: Integración con Spotify (Personal por Perfil y con Código QR) -->
             <div id="viewSpotify" class="hide">
                 <!-- Estado: Sin credenciales configuradas -->
                 <div id="spotifySetupBox" class="spotify-setup-box hide">
                     <div class="spotify-header-badge">
                         <span>🟢</span>
-                        <strong>Vincular con Spotify Developer API</strong>
+                        <strong>Configuración de Spotify Developer API</strong>
                     </div>
                     <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 6px;">
-                        Para acceder a tus canciones y playlists de Spotify, ingresa tus credenciales de Spotify Developer:
+                        Para vincular tu cuenta personal de Spotify o la de tu perfil, ingresa tus credenciales de Spotify Developer:
                     </p>
                     <div class="spotify-guide-steps">
                         <ol style="font-size: 0.82rem; color: #ccc; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 4px; margin: 8px 0;">
@@ -151,20 +151,49 @@
                     </button>
                 </div>
 
-                <!-- Estado: Credenciales configuradas pero no autenticado -->
+                <!-- Estado: Credenciales configuradas pero perfil no autenticado -->
                 <div id="spotifyLoginBox" class="spotify-login-box hide">
-                    <div style="text-align: center; padding: 1.5rem 1rem;">
-                        <div style="font-size: 3rem; margin-bottom: 0.5rem;">🟢</div>
-                        <h3 style="color: #fff; margin-bottom: 0.4rem;">Conectar tu cuenta de Spotify</h3>
-                        <p style="font-size: 0.88rem; color: var(--text-muted); max-width: 440px; margin: 0 auto 1.2rem auto;">
-                            Inicia sesión con tu cuenta de Spotify para explorar tus canciones guardadas y tus listas de reproducción, y transferirlas automáticamente al chat.
-                        </p>
-                        <a id="btnSpotifyAuth" href="/api/spotify/login" class="btn-spotify" style="text-decoration: none; display: inline-flex; width: auto; padding: 0.75rem 1.8rem; font-size: 1rem;">
-                            Iniciar Sesión con Spotify
-                        </a>
-                        <div style="margin-top: 1rem;">
+                    <div style="padding: 1.5rem 1rem;">
+                        <div style="text-align: center; margin-bottom: 1.2rem;">
+                            <div style="font-size: 2.8rem; margin-bottom: 0.4rem;">🟢</div>
+                            <h3 style="color: #fff; margin-bottom: 0.3rem;">Vincular Spotify Personal</h3>
+                            <p style="font-size: 0.88rem; color: var(--text-muted);">
+                                Vinculando la biblioteca de Spotify a tu cuenta: <strong id="spotifyTargetUserLabel" style="color: var(--primary);">@usuario</strong>
+                            </p>
+                        </div>
+
+                        <!-- Métodos de Vinculación: QR vs Botón Directo -->
+                        <div class="spotify-connect-methods">
+                            <!-- Opción 1: Código QR Móvil -->
+                            <div class="spotify-method-card">
+                                <div class="spotify-method-title">📱 Conectar con tu Celular (QR)</div>
+                                <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">
+                                    Apunta la cámara de tu teléfono a este código para iniciar sesión con tu cuenta de Spotify móvil:
+                                </p>
+                                <div class="qr-container" id="spotifyQrContainer">
+                                    <img id="spotifyQrImg" src="" alt="Código QR de Conexión" class="spotify-qr-image hide">
+                                    <div id="spotifyQrLoading" style="font-size: 0.82rem; color: var(--text-muted); padding: 2rem 1rem;">Generando código QR...</div>
+                                </div>
+                                <div style="font-size: 0.75rem; color: #10b981; margin-top: 6px; text-align: center;">
+                                    ⚡ Se conectará automáticamente al escanear
+                                </div>
+                            </div>
+
+                            <!-- Opción 2: Navegador de la Computadora -->
+                            <div class="spotify-method-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+                                <div class="spotify-method-title">💻 Conectar desde esta Computadora</div>
+                                <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 16px;">
+                                    Si ya tienes tu sesión de Spotify abierta en este navegador:
+                                </p>
+                                <a id="btnSpotifyAuth" href="#" class="btn-spotify" style="text-decoration: none; display: inline-flex; width: 100%; max-width: 240px; padding: 0.75rem 1.2rem; font-size: 0.92rem; justify-content: center;">
+                                    Iniciar Sesión en esta PC
+                                </a>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 1.2rem; text-align: center;">
                             <button id="btnEditSpotifyCreds" class="btn-link" type="button" style="font-size: 0.8rem; color: var(--text-muted); background: none; border: none; text-decoration: underline; cursor: pointer;">
-                                ⚙ Cambiar credenciales de Spotify
+                                ⚙ Cambiar credenciales de Spotify Developer
                             </button>
                         </div>
                     </div>
@@ -177,7 +206,9 @@
                         <div class="spotify-user-info">
                             <img id="spotifyUserAvatar" src="" class="spotify-avatar hide" alt="Avatar">
                             <div>
-                                <div style="font-size: 0.75rem; color: #10b981; text-transform: uppercase; font-weight: 700;">Cuenta de Spotify Conectada</div>
+                                <div style="font-size: 0.75rem; color: #10b981; text-transform: uppercase; font-weight: 700;">
+                                    Spotify Personal de <span id="spotifyChatProfileBadge"></span>
+                                </div>
                                 <strong id="spotifyUserName" style="color: #fff; font-size: 0.95rem;"></strong>
                             </div>
                         </div>

@@ -2,8 +2,9 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/styles.css
- * Versión: 1.5.0
+ * Versión: 1.6.0
  * Descripción: Estilos CSS del chat original adaptados para el conversor:
+ *              - Soporte para conexión de Spotify con Código QR y selector de método
  *              - Soporte para integración completa con Spotify (temática y componentes)
  *              - Pantalla de bloqueo/login idéntica al chat (sin invitados)
  *              - Grupos de álbumes y canciones idénticos al chat
@@ -520,7 +521,7 @@ button:disabled {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   COMPONENTES Y ESTILOS DE SPOTIFY
+   COMPONENTES Y ESTILOS DE SPOTIFY & CÓDIGO QR
    ══════════════════════════════════════════════════════════════════════ */
 .spotify-setup-box {
     background-color: #11141c;
@@ -541,6 +542,46 @@ button:disabled {
     background-color: #121620;
     border: 1px solid #232c3c;
     border-radius: var(--radius);
+}
+
+.spotify-connect-methods {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 1rem;
+}
+
+.spotify-method-card {
+    background-color: #171c26;
+    border: 1px solid #2c3546;
+    border-radius: 12px;
+    padding: 1rem;
+}
+
+.spotify-method-title {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #fff;
+    margin-bottom: 4px;
+}
+
+.qr-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 180px;
+    background: #0d1017;
+    border-radius: 8px;
+    border: 1px solid #262e3d;
+    padding: 8px;
+}
+
+.spotify-qr-image {
+    width: 170px;
+    height: 170px;
+    border-radius: 6px;
+    background: #fff;
+    padding: 6px;
 }
 
 .spotify-user-bar {
@@ -936,6 +977,9 @@ button:disabled {
 .hide { display: none !important; }
 
 @media (max-width: 600px) {
+    .spotify-connect-methods {
+        grid-template-columns: 1fr;
+    }
     .search-item {
         flex-direction: column;
         align-items: flex-start;
