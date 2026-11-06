@@ -2,8 +2,11 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.8.2
+ * Versión: 1.8.3
  * Descripción: Servidor Express optimizado y enfocado en YouTube:
+ *              - Soporte de certificados SSL universales (--no-check-certificates)
+ *              - Prevención de bloqueos por validación de certificado en Windows/Linux
+ *              - Descarga y transcodificación acelerada con Node runtime y rotación de clientes
  *              - Búsqueda extendida en YouTube (hasta 50 resultados por consulta)
  *              - Barra interactiva de previsualización y pre-escucha antes de descargar
  *              - Pipeline de conversión YouTube a MP3 de alta fidelidad (yt-dlp + FFmpeg)
@@ -140,6 +143,7 @@ app.post('/api/youtube-search', async (req, res) => {
         try {
             const clientArg = clientOptions[attempt - 1] || clientOptions[0];
             const args = [
+                '--no-check-certificates',
                 '--js-runtimes', 'node',
                 '--extractor-args', clientArg,
                 `ytsearch${count}:${query.trim()}`,
@@ -196,6 +200,7 @@ app.post('/api/playlist-info', async (req, res) => {
 
     try {
         const args = [
+            '--no-check-certificates',
             '--js-runtimes', 'node',
             '--extractor-args', 'youtube:player_client=android,web',
             '--dump-single-json',
@@ -265,6 +270,7 @@ app.post('/api/video-info', async (req, res) => {
         try {
             const clientArg = clientOptions[attempt - 1] || clientOptions[0];
             const args = [
+                '--no-check-certificates',
                 '--js-runtimes', 'node',
                 '--extractor-args', clientArg,
                 '--dump-single-json',
@@ -334,6 +340,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
                 console.log(`[YouTube Convert] Intento ${attempt}/3 usando estrategia: ${clientArg}`);
 
                 const ytdlArgs = [
+                    '--no-check-certificates',
                     '--js-runtimes', 'node',
                     '--extractor-args', clientArg,
                     '--retries', '3',

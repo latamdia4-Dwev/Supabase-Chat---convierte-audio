@@ -2,15 +2,12 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.8.2
+ * Versión: 1.8.3
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
- *              - Corrección crítica de cierre inmediato y parpadeo en modal de similitud
- *              - Eliminación de listeners de cierre accidental en overlay backdrop
- *              - Protección de propagación de eventos (stopPropagation/preventDefault)
- *              - Umbral de similitud calibrado a 0.72 para eliminar falsos positivos
- *              - Memoria de bypass para canciones confirmadas por el usuario
- *              - Botón de desbloqueo manual de emergencia
- *              - Barra de pre-escucha y álbumes colapsables idénticos al chat original
+ *              - Estado de carga en vivo dentro del modal de similitud (sin cierres a ciegas)
+ *              - Prevención integral de bloqueos: visualización de progreso y desbloqueo
+ *              - Soporte de certificados SSL universales en backend (--no-check-certificates)
+ *              - Eliminación definitiva de congelamientos por peticiones lentas o duplicados
  * ============================================================================
  */
 
@@ -617,7 +614,6 @@ function findSimilarTrack(candidateTitle) {
 let modalOpenedAt = 0;
 
 function closeSimilarityModal(force = false) {
-    // Protección contra cierre accidental inmediato (rebotes de eventos < 300ms)
     if (!force && Date.now() - modalOpenedAt < 300) {
         return;
     }
@@ -633,6 +629,14 @@ function closeSimilarityModal(force = false) {
     $('modalAudioCompareWrap').innerHTML = '';
     $('modalRenameSection').classList.add('hide');
     $('btnModalRename').textContent = 'Cambiar Nombre';
+
+    // Restaurar vistas internas del modal
+    const compareTable = document.querySelector('#similarityModal .comparison-table');
+    if (compareTable) compareTable.classList.remove('hide');
+    const actionsRow = $('modalActionsRow');
+    if (actionsRow) actionsRow.classList.remove('hide');
+    const loadingState = $('modalLoadingState');
+    if (loadingState) loadingState.classList.add('hide');
 }
 
 function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
@@ -647,6 +651,13 @@ function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
     $('modalRenameInput').value = newTitle;
     $('modalRenameSection').classList.add('hide');
     $('btnModalRename').textContent = 'Cambiar Nombre';
+
+    const compareTable = document.querySelector('#similarityModal .comparison-table');
+    if (compareTable) compareTable.classList.remove('hide');
+    const actionsRow = $('modalActionsRow');
+    if (actionsRow) actionsRow.classList.remove('hide');
+    const loadingState = $('modalLoadingState');
+    if (loadingState) loadingState.classList.add('hide');
 
     const modalAudioWrap = $('modalAudioCompareWrap');
     modalAudioWrap.innerHTML = '';
@@ -680,21 +691,34 @@ function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
 
     $('similarityModal').classList.remove('hide');
 
-    // Opción 1: Subir de todos modos
-    $('btnModalUploadAnyway').onclick = (e) => {
+    const triggerUpload = async (titleToUpload) => {
+        if (compareTable) compareTable.classList.add('hide');
+        if (actionsRow) actionsRow.classList.add('hide');
+        if (loadingState) loadingState.classList.remove('hide');
+        $('modalLoadingText').textContent = 'Descargando audio de YouTube y transcodificando a MP3...';
+
+        try {
+            await onConfirm(titleToUpload);
+            $('modalLoadingText').textContent = '✔ ¡Canción convertida y agregada a tu perfil!';
+            setTimeout(() => {
+                closeSimilarityModal(true);
+            }, 1200);
+        } catch (uploadErr) {
+            $('modalLoadingText').innerHTML = `<span style="color: var(--danger)">✘ ${uploadErr.message}</span>`;
+            if (actionsRow) actionsRow.classList.remove('hide');
+            $('btnModalUploadAnyway').textContent = 'Reintentar Subida';
+        }
+    };
+
+    // Opción 1: Subir de todos modos (con progreso en vivo dentro del modal)
+    $('btnModalUploadAnyway').onclick = async (e) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
-        const btnUpload = $('btnModalUploadAnyway');
-        btnUpload.disabled = true;
-        btnUpload.textContent = '⏳ Subiendo...';
         bypassedSimilarityTitles.add(normalizeTitle(newTitle));
-        closeSimilarityModal(true);
-        btnUpload.disabled = false;
-        btnUpload.textContent = 'Subir de todos modos';
-        onConfirm(newTitle);
+        await triggerUpload(newTitle);
     };
 
     // Opción 2: Cambiar Nombre in-situ
-    $('btnModalRename').onclick = (e) => {
+    $('btnModalRename').onclick = async (e) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
         const renameSection = $('modalRenameSection');
         if (renameSection.classList.contains('hide')) {
@@ -706,8 +730,7 @@ function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
             const updatedTitle = $('modalRenameInput').value.trim() || newTitle;
             $('customTitleInput').value = updatedTitle;
             bypassedSimilarityTitles.add(normalizeTitle(updatedTitle));
-            closeSimilarityModal(true);
-            onConfirm(updatedTitle);
+            await triggerUpload(updatedTitle);
         }
     };
 
@@ -744,38 +767,39 @@ window.addEventListener('keydown', (e) => {
 // ══════════════════════════════════════════════════════════════════════
 
 async function executeUpload(url, customTitle, album) {
-    if (!url) {
-        logEvent('Ingresa un enlace de YouTube o selecciona una canción del buscador.', 'warn');
-        resetConvertButtonState();
-        return;
-    }
-
-    const sessionRes = await supabaseClient.auth.getSession();
-    const token = sessionRes.data?.session?.access_token || currentAccessToken;
-
-    if (!token || !currentUserId) {
-        logEvent('Tu sesión ha expirado o no es válida. Inicia sesión de nuevo.', 'error');
-        $('lockOverlay').style.display = 'flex';
-        $('appCard').classList.add('hide');
-        showLockError('Tu sesión ha expirado. Por favor ingresa tus datos.');
-        resetConvertButtonState();
-        return;
-    }
-
     const btn = $('btnConvertAndUpload');
-    btn.disabled = true;
-    $('convertBtnIcon').textContent = '⏳';
-    $('convertBtnText').textContent = 'Descargando y convirtiendo a MP3...';
-    $('btnResetConvertState').classList.remove('hide');
-
-    const consoleBox = $('consoleBox');
-    consoleBox.classList.remove('hide');
-    consoleBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-    logEvent(`Iniciando procesamiento de "${customTitle}"...`, 'info');
-    logEvent(`Descargando audio de YouTube y transcodificando a MP3 de alta fidelidad...`, 'info');
 
     try {
+        if (!url) {
+            logEvent('Ingresa un enlace de YouTube o selecciona una canción del buscador.', 'warn');
+            resetConvertButtonState();
+            return;
+        }
+
+        const sessionRes = await supabaseClient.auth.getSession();
+        const token = sessionRes.data?.session?.access_token || currentAccessToken;
+
+        if (!token || !currentUserId) {
+            logEvent('Tu sesión ha expirado o no es válida. Inicia sesión de nuevo.', 'error');
+            $('lockOverlay').style.display = 'flex';
+            $('appCard').classList.add('hide');
+            showLockError('Tu sesión ha expirado. Por favor ingresa tus datos.');
+            resetConvertButtonState();
+            throw new Error('Sesión expirada.');
+        }
+
+        btn.disabled = true;
+        $('convertBtnIcon').textContent = '⏳';
+        $('convertBtnText').textContent = 'Descargando y convirtiendo a MP3...';
+        $('btnResetConvertState').classList.remove('hide');
+
+        const consoleBox = $('consoleBox');
+        consoleBox.classList.remove('hide');
+        consoleBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        logEvent(`Iniciando procesamiento de "${customTitle}"...`, 'info');
+        logEvent(`Descargando audio de YouTube y transcodificando a MP3 de alta fidelidad...`, 'info');
+
         const result = await safeFetchJson('/api/convert-and-upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -798,8 +822,11 @@ async function executeUpload(url, customTitle, album) {
         await loadAlbumsDataList();
         await loadUploadedTracks();
 
+        return result;
+
     } catch (err) {
         logEvent(`✘ Error en el proceso: ${err.message}`, 'error');
+        throw err;
     } finally {
         resetConvertButtonState();
     }

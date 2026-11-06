@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor YouTube a MP3 - Supabase Chat v1.8.2</title>
-    <!-- Estilos de la aplicación v1.8.2 -->
+    <title>Conversor YouTube a MP3 - Supabase Chat v1.8.3</title>
+    <!-- Estilos de la aplicación v1.8.3 -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -262,7 +262,18 @@
                     <input id="modalRenameInput" type="text" style="width: 100%; padding: 0.5rem 0.8rem; font-size: 0.88rem;" placeholder="Nuevo nombre para la canción">
                 </div>
 
-                <div class="modal-actions">
+                <!-- Estado de Progreso de Subida dentro del Modal -->
+                <div id="modalLoadingState" class="hide" style="text-align: center; padding: 1.5rem; background: rgba(0,0,0,0.25); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);">
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem; animation: pulse 1.5s infinite;">⏳</div>
+                    <div id="modalLoadingText" style="font-weight: 600; font-size: 1.05rem; color: var(--primary); margin-bottom: 0.3rem;">
+                        Descargando de YouTube y transcodificando a MP3...
+                    </div>
+                    <small style="color: var(--text-muted); font-size: 0.82rem; display: block;">
+                        Procesando audio de alta fidelidad y guardando en tu perfil. No cierres esta ventana...
+                    </small>
+                </div>
+
+                <div class="modal-actions" id="modalActionsRow">
                     <button id="btnModalCancel" class="btn-secondary" type="button">Cancelar</button>
                     <button id="btnModalRename" class="btn-secondary" type="button">Cambiar Nombre</button>
                     <button id="btnModalUploadAnyway" class="btn-primary" style="width: auto;" type="button">Subir de todos modos</button>
