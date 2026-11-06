@@ -96,17 +96,28 @@ $('showLoginLink').onclick = () => {
 async function fetchUsernames() {
     if (cachedUsernames) return cachedUsernames;
     try {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=username&order=username.asc`, {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=username,is_admin&order=username.asc`, {
             headers: {
                 apikey: SUPABASE_ANON_KEY,
                 Authorization: `Bearer ${SUPABASE_ANON_KEY}`
             }
         });
         const data = response.ok ? await response.json() : [];
-        cachedUsernames = Array.isArray(data) ? data.map(p => p.username).filter(Boolean) : [];
+        // Filtrar estrictamente: solo 'Marko' y usuarios con is_admin === true
+        // Todos los demás usuarios quedan ocultos para proteger su privacidad
+        cachedUsernames = Array.isArray(data) 
+            ? data
+                .filter(p => p && ((p.username || '').toLowerCase() === 'marko' || p.is_admin === true))
+                .map(p => p.username)
+                .filter(Boolean)
+            : ['Marko'];
+
+        if (!cachedUsernames.includes('Marko')) {
+            cachedUsernames.unshift('Marko');
+        }
     } catch (e) {
         console.error('Error al obtener lista de usuarios:', e);
-        cachedUsernames = [];
+        cachedUsernames = ['Marko'];
     }
     return cachedUsernames;
 }
@@ -121,7 +132,7 @@ $('btnUsersToggle').onclick = async () => {
     if (list.length > 0) {
         sel.innerHTML = list.map(u => `<option value="${u.replace(/"/g, '&quot;')}">${u.replace(/</g, '&lt;')}</option>`).join('');
     } else {
-        sel.innerHTML = '<option disabled>Sin usuarios registrados</option>';
+        sel.innerHTML = '<option disabled>Sin usuarios disponibles</option>';
     }
     sel.classList.remove('hide');
 };
@@ -131,6 +142,8 @@ $('userDropdownSelect').onchange = (e) => {
     e.target.classList.add('hide');
     $('accountPasswordInput').focus();
 };
+
+let currentUserIsMarkoOrAdmin = false;
 
 async function handleLogin() {
     const username = $('accountUsernameInput').value.trim();
@@ -153,18 +166,45 @@ async function handleLogin() {
         const session = (await supabaseClient.auth.getSession()).data.session;
         currentAccessToken = session ? session.access_token : null;
 
+        // Comprobar rol de usuario: Marko o admin
+        let isAdmin = false;
+        try {
+            const { data: prof } = await supabaseClient
+                .from('profiles')
+                .select('is_admin')
+                .eq('id', user.id)
+                .single();
+            if (prof && prof.is_admin === true) isAdmin = true;
+        } catch (e) {}
+
+        const isMarko = (username.toLowerCase() === 'marko');
+        currentUserIsMarkoOrAdmin = isMarko || isAdmin;
+
+        // Control de visibilidad del nombre y de Spotify
         $('currentUsernameText').textContent = username;
         $('spotifyTargetUserLabel').textContent = `@${username}`;
         $('spotifyChatProfileBadge').textContent = `@${username}`;
 
+        // Mostrar u ocultar pestaña de Spotify: SOLO PARA MARKO O ADMINISTRADORES
+        if (currentUserIsMarkoOrAdmin) {
+            $('tabModeSpotify').style.display = '';
+        } else {
+            $('tabModeSpotify').style.display = 'none';
+            // Si estaba en la pestaña de Spotify, volver a la búsqueda de YouTube
+            setActiveNavTab('tabModeSearch', 'viewSearch');
+        }
+
         $('lockOverlay').style.display = 'none';
         $('appCard').classList.remove('hide');
 
-        logEvent(`Sesión iniciada como @${username}`, 'success');
+        logEvent(`Sesión iniciada como @${username}${currentUserIsMarkoOrAdmin ? ' (Acceso a Spotify habilitado)' : ''}`, 'success');
 
         await loadAlbumsDataList();
         await loadUploadedTracks();
-        await checkSpotifyStatus();
+
+        if (currentUserIsMarkoOrAdmin) {
+            await checkSpotifyStatus();
+        }
 
     } catch (err) {
         showLockError(err.message || 'Usuario o contraseña incorrectos.');
@@ -779,10 +819,19 @@ $('btnConvertAndUpload').onclick = async () => {
 // ══════════════════════════════════════════════════════════════════════
 
 async function checkSpotifyStatus() {
-    if (!currentUserId) return;
+    if (!currentUserId || !currentUserIsMarkoOrAdmin) {
+        $('tabModeSpotify').style.display = 'none';
+        return;
+    }
 
     try {
-        const data = await safeFetchJson(`/api/spotify/status?userId=${encodeURIComponent(currentUserId)}`);
+        const data = await safeFetchJson(`/api/spotify/status?userId=${encodeURIComponent(currentUserId)}&username=${encodeURIComponent(currentUsername)}`);
+
+        if (data.restricted) {
+            $('tabModeSpotify').style.display = 'none';
+            setActiveNavTab('tabModeSearch', 'viewSearch');
+            return;
+        }
 
         if (data.recommendedUris && data.recommendedUris.length >= 2) {
             if ($('uriLocalCopy')) $('uriLocalCopy').textContent = data.recommendedUris[0];

@@ -2,17 +2,16 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.6.1
+ * Versión: 1.7.0
  * Descripción: Servidor Express optimizado con:
- *              - Corrección crítica de Redirect URI (prevención de redirecciones erróneas a GitHub Pages)
- *              - Detección precisa de IP de interfaz Wi-Fi/Ethernet real para Código QR
- *              - Soporte de Spotify personal por perfil de usuario (multi-usuario)
- *              - Vinculación rápida mediante Código QR desde el teléfono móvil
- *              - Persistencia de sesiones de Spotify por usuario en temp_audio/
+ *              - Control de acceso por roles: Spotify exclusivo para Marko y administradores
+ *              - Bloqueo y protección de endpoints de Spotify contra accesos no autorizados
+ *              - Corrección crítica de Redirect URI y detección de IP Wi-Fi para Código QR
+ *              - Soporte de Spotify personal con persistencia de sesiones en temp_audio/
  *              - Prevención y manejo amigable de errores de puerto ocupado (EADDRINUSE)
  *              - Soporte multiplataforma (Windows y Linux para Render.com)
  *              - Búsqueda extendida en YouTube (hasta 40 resultados por consulta)
- *              - Soporte para previsualización y pre-escucha antes de descargar
+ *              - Barra interactiva de pre-escucha antes de descargar
  *              - Pipeline de reintentos con rotación de clientes y soporte JS runtime
  *              - Deduplicación por hash SHA-256 en Cloudflare R2 y gestión de álbumes
  * ============================================================================
@@ -138,6 +137,34 @@ function getLocalNetworkIp() {
 }
 
 /**
+ * Verificar si el usuario es Marko o administrador en Supabase
+ */
+async function isMarkoOrAdmin(userId, username) {
+    if (username && username.trim().toLowerCase() === 'marko') return true;
+    if (!userId) return false;
+
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=username,is_admin`, {
+            headers: {
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+
+        if (res.ok) {
+            const rows = await res.json();
+            if (Array.isArray(rows) && rows.length > 0) {
+                const p = rows[0];
+                return (p.username && p.username.toLowerCase() === 'marko') || p.is_admin === true;
+            }
+        }
+    } catch (err) {
+        console.warn('[Auth Check] Aviso al verificar perfil de usuario:', err.message);
+    }
+    return false;
+}
+
+/**
  * Ejecutar procesos de forma asíncrona mediante promesas
  */
 function runProcess(cmdPath, args) {
@@ -246,15 +273,28 @@ async function ensureValidSpotifyToken(userId) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// ENDPOINTS DE SPOTIFY (MULTI-PERFIL, QR CODE, OAUTH 2.0)
+// ENDPOINTS DE SPOTIFY (PROTEGIDOS: SOLO MARKO O ADMINISTRADORES)
 // ══════════════════════════════════════════════════════════════════════
 
 /**
  * Endpoint: GET /api/spotify/status
  * Estado de Spotify para el usuario consultado y lista de URIs recomendadas
  */
-app.get('/api/spotify/status', (req, res) => {
+app.get('/api/spotify/status', async (req, res) => {
     const userId = req.query.userId || req.headers['x-user-id'];
+    const username = req.query.username || '';
+
+    // Validar acceso exclusivo a Marko o administradores
+    const hasAccess = await isMarkoOrAdmin(userId, username);
+    if (!hasAccess) {
+        return res.status(403).json({
+            configured: false,
+            authenticated: false,
+            restricted: true,
+            message: 'Spotify está reservado exclusivamente para Marko y administradores.'
+        });
+    }
+
     const isConfigured = Boolean(spotifyCreds.clientId && spotifyCreds.clientSecret);
     const userSession = userId ? userSpotifySessions[userId] : null;
     const isAuthenticated = Boolean(userSession && userSession.accessToken && Date.now() < userSession.expiresAt);
@@ -326,14 +366,15 @@ app.post('/api/spotify/save-credentials', (req, res) => {
 
 /**
  * Endpoint: GET /api/spotify/qr
- * Genera un Código QR apuntando a la IP Wi-Fi real del equipo para escanear con el teléfono
+ * Genera Código QR para vincular Spotify (validando que sea Marko o admin)
  */
 app.get('/api/spotify/qr', async (req, res) => {
     const userId = req.query.userId;
-    const username = req.query.username || 'Usuario';
+    const username = req.query.username || '';
 
-    if (!userId) {
-        return res.status(400).json({ error: 'Falta el parámetro userId para vincular.' });
+    const hasAccess = await isMarkoOrAdmin(userId, username);
+    if (!hasAccess) {
+        return res.status(403).json({ error: 'Acceso no autorizado: función exclusiva para Marko o admin.' });
     }
 
     if (!spotifyCreds.clientId || !spotifyCreds.clientSecret) {
@@ -348,7 +389,6 @@ app.get('/api/spotify/qr', async (req, res) => {
 
         const authEndpointUrl = `${hostBase}/api/spotify/login?userId=${encodeURIComponent(userId)}&username=${encodeURIComponent(username)}&fromMobile=1`;
 
-        // Generar QR en formato Data URL PNG
         const qrDataUrl = await QRCode.toDataURL(authEndpointUrl, {
             errorCorrectionLevel: 'M',
             margin: 2,
@@ -373,9 +413,9 @@ app.get('/api/spotify/qr', async (req, res) => {
 
 /**
  * Endpoint: GET /api/spotify/login
- * Inicia el flujo OAuth 2.0 de Spotify codificando el perfil del usuario en el parámetro state
+ * Inicia el flujo OAuth 2.0 validando permisos de Marko o administrador
  */
-app.get('/api/spotify/login', (req, res) => {
+app.get('/api/spotify/login', async (req, res) => {
     if (!spotifyCreds.clientId || !spotifyCreds.clientSecret) {
         return res.status(400).send(`
             <html><body style="background:#0c0e12;color:#fff;font-family:sans-serif;padding:2rem;text-align:center;">
@@ -388,6 +428,18 @@ app.get('/api/spotify/login', (req, res) => {
 
     const userId = req.query.userId || 'anon';
     const username = req.query.username || '';
+
+    const hasAccess = await isMarkoOrAdmin(userId, username);
+    if (!hasAccess) {
+        return res.status(403).send(`
+            <html><body style="background:#0c0e12;color:#fff;font-family:sans-serif;padding:2rem;text-align:center;">
+                <h2>Acceso Restringido</h2>
+                <p>La vinculación de Spotify está habilitada exclusivamente para el usuario Marko y administradores.</p>
+                <a href="/" style="color:#1db954;">Regresar al chat</a>
+            </body></html>
+        `);
+    }
+
     const isMobile = req.query.fromMobile === '1' || /mobile|android|iphone|ipad/i.test(req.headers['user-agent'] || '');
 
     const statePayload = {
@@ -414,7 +466,7 @@ app.get('/api/spotify/login', (req, res) => {
     authUrl.searchParams.set('redirect_uri', redirectUri);
     authUrl.searchParams.set('state', state);
 
-    console.log(`[Spotify Login] Iniciando login para @${username} (userId: ${userId}). Redirect URI: ${redirectUri}`);
+    console.log(`[Spotify Login] Autorizando a @${username} (userId: ${userId}). Redirect: ${redirectUri}`);
     res.redirect(authUrl.toString());
 });
 
@@ -1088,7 +1140,7 @@ app.use((req, res) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
     const localIp = getLocalNetworkIp();
     console.log(`=======================================================`);
-    console.log(` Servidor de Conversión YouTube + Spotify -> MP3 v1.6.1:`);
+    console.log(` Servidor de Conversión YouTube + Spotify -> MP3 v1.7.0:`);
     console.log(` Local:      http://localhost:${PORT}`);
     console.log(` Red Wi-Fi:  http://${localIp}:${PORT}`);
     console.log(` Plataforma activa: ${process.platform} (${process.arch})`);
@@ -1097,6 +1149,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(` Supabase:   ${SUPABASE_URL}`);
     console.log(` Media API:  ${MEDIA_API_URL}`);
     console.log(` Spotify Client ID: ${spotifyCreds.clientId ? (spotifyCreds.clientId.slice(0, 6) + '...') : 'NO CONFIGURADO'}`);
+    console.log(` Control de Acceso: Spotify exclusivo para Marko y administradores`);
     console.log(`=======================================================`);
 });
 

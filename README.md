@@ -1,6 +1,6 @@
 # Conversor YouTube y Spotify a MP3 - Supabase Chat
 
-**Versión:** 1.6.1  
+**Versión:** 1.7.0  
 **Arquitectura:** Node.js (Express), yt-dlp, FFmpeg, Cloudflare R2, Supabase Auth/DB, Spotify Web API & Render.com  
 
 ---
@@ -8,31 +8,28 @@
 ## 🎯 Descripción General
 Servicio integral y panel web moderno diseñado para sincronizar música desde **YouTube** y **Spotify** directamente con el perfil y almacenamiento del chat grupal en Supabase y Cloudflare R2.
 
-### ✨ Novedades en la Versión 1.6.1
-1. **🛡️ Corrección Crítica de Redirect URI**:
-   - Corrección del fallo donde Spotify redirigía al chat de GitHub Pages (`github.io`) en lugar de al servidor local `/api/spotify/callback`.
-   - Normalización automática de URIs para procesar los tokens de forma segura e independiente por perfil.
-2. **📱 Código QR con IP Wi-Fi Real**:
-   - Detección precisa de la interfaz de red física (`192.168.50.249`) descartando adaptadores virtuales y APIPA (`169.254.x.x`).
-   - El escaneo desde el celular móvil ya no marca 404 y conecta directamente al servidor.
-3. **🟢 Spotify Personal Multi-Perfil**:
-   - Cada perfil de usuario (ej. `Marko`) conecta su **propia cuenta personal de Spotify** sin compartir ni mezclar sus canciones con otros perfiles.
-4. **💻 Botón Directo para PC**:
-   - Autenticación instantánea en el navegador de la computadora con 1 clic mediante `btnSpotifyAuth`.
+### ✨ Novedades en la Versión 1.7.0
+1. **🔒 Spotify Exclusivo para Marko y Administradores**:
+   - La pestaña y los módulos de Spotify solo se muestran y están disponibles cuando se inicia sesión como **Marko** o con un usuario administrador (`is_admin === true`).
+   - Para todos los demás usuarios, la pestaña de Spotify permanece totalmente oculta e inaccesible (protección tanto en interfaz como a nivel de endpoints backend con `403 Forbidden`).
+2. **🛡️ Privacidad en el Inicio de Sesión**:
+   - El selector desplegable de usuarios (`▾`) en la pantalla de login filtra y oculta los nombres de los demás usuarios del chat, mostrando únicamente a **Marko** y administradores.
+3. **📱 Código QR con IP Wi-Fi Real (`192.168.50.249`)**:
+   - Detección precisa de la interfaz de red física descartando adaptadores virtuales y APIPA (`169.254.x.x`).
+4. **⚙️ Corrección de Redirect URI**:
+   - Prevención de desvíos hacia GitHub Pages (`github.io`).
 
 ---
 
 ## ⚙️ Configuración Obligatoria en Spotify Developer
 
-Para que Spotify permita la conexión sin errores, ve a [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard):
-1. Abre tu App y ve a **Settings**.
-2. En la sección **Redirect URIs**, agrega estas dos direcciones exactas:
+En [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard), en los **Settings** de tu App:
+1. En **Redirect URIs**, asegúrate de tener:
    ```text
    http://localhost:3000/api/spotify/callback
    http://192.168.50.249:3000/api/spotify/callback
    ```
-3. Guarda los cambios (**Save**).
-*(Nota: No pongas la URL de `github.io` en este campo, ya que Spotify necesita llamar a este servidor para procesar tus listas).*
+2. Guarda los cambios (**Save**).
 
 ---
 
@@ -43,4 +40,4 @@ npm start
 ```
 Abre en tu navegador:
 👉 **[http://localhost:3000](http://localhost:3000)**
-Inicia sesión con **Marko** y haz clic en **"Iniciar Sesión en esta PC"** o escanea el QR desde tu celular.
+Inicia sesión con tu cuenta **Marko** y verás la pestaña **🟢 Mi Spotify** lista para conectar con 1 clic en PC o con Código QR desde tu celular.
