@@ -1,17 +1,40 @@
-# Conversor de YouTube a MP3 y Uploader de Audio (v1.1.0)
+# Conversor de YouTube a MP3 y Uploader de Audio (v1.2.0)
 
-Sistema en **Node.js** para descargar, transcodificar videos de YouTube a **MP3 de alta fidelidad** y subirlos directamente al Storage (Cloudflare R2) de **Supabase Chat**, vinculándolos al perfil del usuario autenticado y gestionando sus álbumes.
+Sistema integral en **Node.js** para descargar, transcodificar videos y listas de reproducción de YouTube a **MP3 de alta fidelidad**, subirlos al Storage (**Cloudflare R2**) de **Supabase Chat**, con deduplicación por hash SHA-256, comparador de canciones similares y organización por álbumes idéntica al chat original.
 
 ---
 
-## 🚀 Características Principales
+## 🚀 Novedades de la Versión 1.2.0
 
-- **Autenticación Integrada con Supabase Chat**: Inicio de sesión idéntico al chat y `uploader.html`, con selector dinámico de usuarios desde la tabla `profiles` y validación de contraseñas seguras.
-- **Transcodificación a MP3 de Alto Rendimiento**: Emplea binarios locales optimizados de `yt-dlp` y `FFmpeg` para extraer el mejor stream de audio y codificar en MP3 sin depender de servicios externos de terceros.
-- **Deduplicación Inteligente por Hash SHA-256**: Calcula el hash de cada archivo generado y consulta el procedimiento RPC `find_active_track_by_hash` de Supabase para evitar subidas duplicadas y optimizar almacenamiento y ancho de banda en Cloudflare R2.
-- **Gestión Dinámica de Álbumes**: Crea álbumes nuevos en tu perfil o asocia canciones a álbumes existentes con autocompletado en tiempo real.
-- **Reproductor de Audio Integrado**: Permite escuchar las canciones recién subidas directamente desde la interfaz mediante URLs firmadas temporales.
-- **Arquitectura Limpia**: Separación estricta entre la lógica de conexión a la Base de Datos / Storage y el backend del conversor.
+1. **Pantalla de Bloqueo y Login Idéntica al Chat**:
+   - Mismo diseño visual oscuro (`lock-box`, inputs centrados y redondeados, botón verde `#3ecf8e`).
+   - Soporte para inicio de sesión y registro de nuevas cuentas personales mediante Supabase Auth.
+   - Pestaña de invitados eliminada completamente.
+   - Botón `▾` para autocompletar usuarios existentes desde la tabla `profiles`.
+
+2. **Buscador de Canciones en YouTube Integrado**:
+   - Permite buscar directamente canciones por título o artista sin necesidad de abrir YouTube externamente.
+   - Muestra resultados interactivos con miniatura, canal, duración y botón para seleccionar en 1 clic.
+
+3. **Soporte para Playlists (Listas de Reproducción)**:
+   - Detecta automáticamente si un enlace corresponde a una lista de YouTube.
+   - Lista todas las canciones con checkboxes de selección y preasigna el nombre de la playlist como Álbum.
+   - Procesa y sube todas las canciones de la lista en cola automática.
+
+4. **Comparación Inteligente de Canciones Similares**:
+   - Analiza el título de la canción contra tu biblioteca antes de subirla (ej. detecta si vas a subir *"Lagrimas Negras"* teniendo ya *"Lagrimas Negras - Black Winter Rock (192k)"*).
+   - Abre un **Modal de Comparación Visual** con los datos de ambas canciones, reproductor para escuchar la que ya tienes y opciones para:
+     - Subir de todos modos.
+     - Cambiar de nombre.
+     - Cancelar la subida.
+
+5. **Vista de Canciones Separadas por Álbum (Idéntica al Chat Original)**:
+   - Acordeones colapsables para cada álbum (`💿 [Nombre Álbum]` y `📁 Sin álbum`).
+   - Botones globales para "Desplegar todo" y "Colapsar todo".
+   - Filtro buscador en tiempo real para encontrar canciones al instante en tu biblioteca.
+
+6. **Eliminación de Canciones**:
+   - Botón `🗑️` en cada canción con confirmación visual de eliminación inmediata en Supabase.
 
 ---
 
@@ -23,15 +46,15 @@ Sistema en **Node.js** para descargar, transcodificar videos de YouTube a **MP3 
 │   ├── auth.js          # Lógica de autenticación con Supabase
 │   ├── config.js        # Configuración de URLs y credenciales públicas
 │   └── media-api.js     # Cliente del Worker de Cloudflare R2 y firmado de URLs
-├── public/              # Frontend web moderno en modo oscuro
-│   ├── app.js           # Lógica cliente y orquestación con la API
-│   ├── index.html       # Interfaz visual de conversión y gestión
-│   └── styles.css       # Estilos CSS responsivos
+├── public/              # Frontend web moderno v1.2.0
+│   ├── app.js           # Lógica cliente, buscador, comparador y álbumes
+│   ├── index.html       # Interfaz visual con login original del chat y acordeones
+│   └── styles.css       # Estilos CSS idénticos al chat original
 ├── temp_audio/          # Almacén de archivos temporales (limpieza automática)
 ├── chat_backup/         # Archivos originales del chat (excluidos de git)
-├── server.js            # Servidor Express y pipeline de conversión
+├── server.js            # Servidor Express v1.2.0 con endpoints de búsqueda y playlists
 ├── uploader.html        # Uploader alternativo para archivos MP3 locales
-├── package.json         # Dependencias y scripts de ejecución (v1.1.0)
+├── package.json         # Dependencias y scripts de ejecución (v1.2.0)
 └── .gitignore           # Reglas de exclusión de Git
 ```
 
@@ -39,17 +62,9 @@ Sistema en **Node.js** para descargar, transcodificar videos de YouTube a **MP3 
 
 ## 🛠️ Ejecución del Servidor
 
-1. Instalar dependencias (si no se han instalado):
-   ```bash
-   npm install
-   ```
+```bash
+npm start
+```
 
-2. Iniciar el servidor:
-   ```bash
-   npm start
-   ```
-
-3. Abrir en el navegador:
-   ```text
-   http://localhost:3000
-   ```
+Abre en tu navegador:
+**`http://localhost:3000`**

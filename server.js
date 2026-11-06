@@ -2,12 +2,12 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.1.0
- * Descripción: Servidor Node.js / Express para descargar audio de videos de
- *              YouTube, transcodificar a MP3 de alta fidelidad con FFmpeg,
- *              calcular hash SHA-256 (deduplicación), subir a Cloudflare R2
- *              y registrar pistas en la base de datos de Supabase vinculadas
- *              a la cuenta del usuario y sus respectivos álbumes.
+ * Versión: 1.2.0
+ * Descripción: Servidor Node.js / Express con endpoints para:
+ *              - Conversión de YouTube a MP3 y subida a R2 / Supabase
+ *              - Búsqueda en YouTube en tiempo real (ytsearch)
+ *              - Detección y lectura de Playlists de YouTube
+ *              - Deduplicación por hash SHA-256 y detección de similitud
  * ============================================================================
  */
 
@@ -86,8 +86,124 @@ function runProcess(cmdPath, args) {
 }
 
 /**
+ * Formatear segundos a cadena MM:SS o HH:MM:SS
+ */
+function formatDuration(seconds) {
+    if (!seconds || isNaN(seconds)) return '0:00';
+    const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+    const m = Math.floor((seconds / 60) % 60);
+    const h = Math.floor(seconds / 3600);
+    return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+/**
+ * Endpoint: POST /api/youtube-search
+ * Busca canciones directamente en YouTube y devuelve resultados con carátula y duración
+ */
+app.post('/api/youtube-search', async (req, res) => {
+    const { query, limit = 8 } = req.body;
+    if (!query || typeof query !== 'string' || !query.trim()) {
+        return res.status(400).json({ error: 'Debes ingresar un término de búsqueda.' });
+    }
+
+    try {
+        const count = Math.min(Math.max(parseInt(limit, 10) || 8, 1), 15);
+        const args = [
+            `ytsearch${count}:${query.trim()}`,
+            '--dump-single-json',
+            '--no-warnings',
+            '--skip-download',
+            '--flat-playlist'
+        ];
+
+        const { stdout } = await runProcess(YTDLP_BIN, args);
+        const data = JSON.parse(stdout);
+        const entries = data.entries || [];
+
+        const results = entries.map(item => {
+            const thumb = item.thumbnails && item.thumbnails.length > 0 
+                ? item.thumbnails[item.thumbnails.length - 1].url 
+                : (item.thumbnail || `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`);
+
+            return {
+                id: item.id,
+                url: item.url || `https://www.youtube.com/watch?v=${item.id}`,
+                title: item.title,
+                cleanTitle: sanitizeFileName(item.title.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ')),
+                uploader: item.uploader || item.channel || 'YouTube',
+                duration: item.duration || 0,
+                durationString: formatDuration(item.duration),
+                thumbnail: thumb
+            };
+        });
+
+        return res.json({ query: query.trim(), results });
+    } catch (err) {
+        console.error('Error al buscar en YouTube:', err);
+        return res.status(500).json({ error: 'Error al realizar la búsqueda en YouTube.' });
+    }
+});
+
+/**
+ * Endpoint: POST /api/playlist-info
+ * Detecta si una URL corresponde a una lista de reproducción (Playlist) y lista sus pistas
+ */
+app.post('/api/playlist-info', async (req, res) => {
+    const { url } = req.body;
+    if (!url || typeof url !== 'string' || !url.trim()) {
+        return res.status(400).json({ error: 'Debes proporcionar una URL válida de playlist.' });
+    }
+
+    try {
+        const args = [
+            '--dump-single-json',
+            '--no-warnings',
+            '--flat-playlist',
+            '--skip-download',
+            url.trim()
+        ];
+
+        const { stdout } = await runProcess(YTDLP_BIN, args);
+        const data = JSON.parse(stdout);
+
+        const isPlaylist = Array.isArray(data.entries) && data.entries.length > 0;
+        if (!isPlaylist) {
+            return res.json({ isPlaylist: false });
+        }
+
+        const tracks = data.entries.map((item, index) => {
+            const thumb = item.thumbnails && item.thumbnails.length > 0 
+                ? item.thumbnails[item.thumbnails.length - 1].url 
+                : (item.thumbnail || `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`);
+
+            return {
+                index: index + 1,
+                id: item.id,
+                url: item.url || `https://www.youtube.com/watch?v=${item.id}`,
+                title: item.title,
+                cleanTitle: sanitizeFileName(item.title.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ')),
+                uploader: item.uploader || item.channel || '',
+                duration: item.duration || 0,
+                durationString: formatDuration(item.duration),
+                thumbnail: thumb
+            };
+        });
+
+        return res.json({
+            isPlaylist: true,
+            playlistTitle: sanitizeFileName(data.title || 'Playlist de YouTube'),
+            trackCount: tracks.length,
+            tracks
+        });
+    } catch (err) {
+        console.error('Error al obtener playlist:', err);
+        return res.status(500).json({ error: 'No se pudo leer la lista de reproducción. Verifica que sea pública.' });
+    }
+});
+
+/**
  * Endpoint: POST /api/video-info
- * Extrae metadatos previos del video de YouTube (título, duración, autor, miniatura)
+ * Extrae metadatos previos de un video individual de YouTube
  */
 app.post('/api/video-info', async (req, res) => {
     const { url } = req.body;
@@ -112,7 +228,7 @@ app.post('/api/video-info', async (req, res) => {
             title: data.title,
             cleanTitle: sanitizeFileName(data.title.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ')),
             duration: data.duration,
-            durationString: data.duration_string || `${Math.floor((data.duration || 0) / 60)}:${((data.duration || 0) % 60).toString().padStart(2, '0')}`,
+            durationString: data.duration_string || formatDuration(data.duration),
             uploader: data.uploader || data.channel,
             thumbnail: data.thumbnail
         });
@@ -170,19 +286,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
             displayName = `YouTube_${Date.now()}`;
         }
 
-        // 4. Verificar si el usuario ya tiene una pista con ese mismo nombre
-        const checkNameRes = await fetch(`${SUPABASE_URL}/rest/v1/music_tracks?user_id=eq.${userId}&display_name=eq.${encodeURIComponent(displayName)}&select=id`, {
-            headers: {
-                apikey: SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${accessToken}`
-            }
-        });
-        const existingTracks = checkNameRes.ok ? await checkNameRes.json() : [];
-        if (Array.isArray(existingTracks) && existingTracks.length > 0) {
-            displayName = `${displayName} (${new Date().toLocaleDateString('es-ES').replace(/\//g, '-')})`;
-        }
-
-        // 5. Deduplicación por hash: llamar RPC find_active_track_by_hash en Supabase
+        // 4. Deduplicación por hash: llamar RPC find_active_track_by_hash en Supabase
         let fileName = null;
         try {
             const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/find_active_track_by_hash`, {
@@ -206,7 +310,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
             console.warn('[YouTube Convert] Aviso en verificación de RPC de hash:', rpcErr);
         }
 
-        // 6. Si no existe previamente, subir el MP3 a Cloudflare R2 Worker
+        // 5. Si no existe previamente en R2, subir el MP3 a Cloudflare R2 Worker
         if (!fileName) {
             console.log(`[YouTube Convert] Subiendo nuevo archivo a Cloudflare R2 Worker...`);
             const uploadRes = await fetch(`${MEDIA_API_URL}/upload/music`, {
@@ -234,7 +338,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
             console.log(`[YouTube Convert] Subida a R2 exitosa. Clave asignada: ${fileName}`);
         }
 
-        // 7. Guardar fila en tabla music_tracks de Supabase vinculada al perfil del usuario
+        // 6. Guardar fila en tabla music_tracks de Supabase vinculada al perfil del usuario
         const finalAlbum = album && album.trim() ? album.trim() : null;
         const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/music_tracks`, {
             method: 'POST',
@@ -262,7 +366,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
         const insertedRecords = await insertRes.json();
         const createdTrack = Array.isArray(insertedRecords) ? insertedRecords[0] : insertedRecords;
 
-        console.log(`[YouTube Convert] Pista registrada exitosamente en Supabase: "${displayName}" (ID: ${createdTrack ? createdTrack.id : 'OK'})`);
+        console.log(`[YouTube Convert] Pista registrada exitosamente en Supabase: "${displayName}"`);
 
         return res.json({
             success: true,
@@ -290,7 +394,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
 // Inicializar el servidor
 app.listen(PORT, () => {
     console.log(`=======================================================`);
-    console.log(` Servidor de Conversión YouTube -> MP3 activo en:`);
+    console.log(` Servidor de Conversión YouTube -> MP3 v1.2.0 activo:`);
     console.log(` http://localhost:${PORT}`);
     console.log(` Conectado a Supabase: ${SUPABASE_URL}`);
     console.log(` Conectado a Media API: ${MEDIA_API_URL}`);

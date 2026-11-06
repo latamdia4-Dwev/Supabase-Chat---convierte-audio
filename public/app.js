@@ -2,24 +2,188 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.1.0
- * Descripción: Lógica del cliente para autenticación, análisis de videos,
- *              orquestación de conversión de YouTube a MP3 y gestión de álbumes
- *              en el perfil del usuario de Supabase Chat.
+ * Versión: 1.2.0
+ * Descripción: Lógica del cliente completa:
+ *              - Login y Registro idénticos al chat (sin invitados)
+ *              - Buscador interactivo de YouTube y soporte de Playlists
+ *              - Comparador de similitud de nombres de canciones
+ *              - Agrupación por álbumes idéntica al chat original
+ *              - Eliminación segura de canciones en tiempo real
  * ============================================================================
  */
 
-// Elementos del DOM
 const $ = (id) => document.getElementById(id);
 
+// Estado de la sesión y aplicación
 let currentUserId = null;
 let currentAccessToken = null;
 let currentUsername = null;
 let cachedUsernames = null;
+let myTracksCache = [];
+let collapsedAlbums = new Set();
+let pendingUploadAction = null;
 
-/**
- * Función para imprimir mensajes en la consola de eventos en vivo
- */
+// ══════════════════════════════════════════════════════════════════════
+// 1. SISTEMA DE LOGIN Y REGISTRO (IDÉNTICO AL CHAT ORIGINAL SIN INVITADOS)
+// ══════════════════════════════════════════════════════════════════════
+
+function showLockError(msg) {
+    const el = $('lockError');
+    if (!msg) {
+        el.style.display = 'none';
+        el.textContent = '';
+    } else {
+        el.textContent = msg;
+        el.style.display = 'block';
+    }
+}
+
+// Conmutar entre Formulario de Inicio de Sesión y Registro
+$('showRegisterLink').onclick = () => {
+    showLockError('');
+    $('accountForm').classList.add('hide');
+    $('registerForm').classList.remove('hide');
+    $('registerUsernameInput').focus();
+};
+
+$('showLoginLink').onclick = () => {
+    showLockError('');
+    $('registerForm').classList.add('hide');
+    $('accountForm').classList.remove('hide');
+    $('accountUsernameInput').focus();
+};
+
+// Cargar usuarios registrados para selector rápido
+async function fetchUsernames() {
+    if (cachedUsernames) return cachedUsernames;
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=username&order=username.asc`, {
+            headers: {
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        const data = response.ok ? await response.json() : [];
+        cachedUsernames = Array.isArray(data) ? data.map(p => p.username).filter(Boolean) : [];
+    } catch (e) {
+        console.error('Error al obtener lista de usuarios:', e);
+        cachedUsernames = [];
+    }
+    return cachedUsernames;
+}
+
+$('btnUsersToggle').onclick = async () => {
+    const sel = $('userDropdownSelect');
+    if (!sel.classList.contains('hide')) {
+        sel.classList.add('hide');
+        return;
+    }
+    const list = await fetchUsernames();
+    if (list.length > 0) {
+        sel.innerHTML = list.map(u => `<option value="${u.replace(/"/g, '&quot;')}">${u.replace(/</g, '&lt;')}</option>`).join('');
+    } else {
+        sel.innerHTML = '<option disabled>Sin usuarios registrados</option>';
+    }
+    sel.classList.remove('hide');
+};
+
+$('userDropdownSelect').onchange = (e) => {
+    $('accountUsernameInput').value = e.target.value;
+    e.target.classList.add('hide');
+    $('accountPasswordInput').focus();
+};
+
+// Iniciar sesión con cuenta personal
+async function handleLogin() {
+    const username = $('accountUsernameInput').value.trim();
+    const password = $('accountPasswordInput').value;
+    showLockError('');
+
+    if (!username || !password) {
+        showLockError('Escribe tu usuario y contraseña.');
+        return;
+    }
+
+    try {
+        $('accountLoginBtn').disabled = true;
+        $('accountLoginBtn').textContent = 'Entrando...';
+
+        const user = await loginAccount(username, password);
+        currentUserId = user.id;
+        currentUsername = username;
+
+        const session = (await supabaseClient.auth.getSession()).data.session;
+        currentAccessToken = session ? session.access_token : null;
+
+        $('currentUsernameText').textContent = username;
+        $('lockOverlay').style.display = 'none';
+        $('appCard').classList.remove('hide');
+
+        logEvent(`Sesión iniciada como @${username}`, 'success');
+
+        await loadAlbumsDataList();
+        await loadUploadedTracks();
+
+    } catch (err) {
+        showLockError(err.message || 'Usuario o contraseña incorrectos.');
+    } finally {
+        $('accountLoginBtn').disabled = false;
+        $('accountLoginBtn').textContent = 'Entrar';
+    }
+}
+
+$('accountLoginBtn').onclick = handleLogin;
+$('accountPasswordInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleLogin();
+});
+
+// Registro de nueva cuenta
+async function handleRegister() {
+    const username = $('registerUsernameInput').value.trim();
+    const password = $('registerPasswordInput').value;
+    showLockError('');
+
+    if (!username || !password) {
+        showLockError('Elige un usuario y una contraseña.');
+        return;
+    }
+
+    try {
+        $('registerBtn').disabled = true;
+        $('registerBtn').textContent = 'Creando cuenta...';
+
+        await registerAccount(username, password);
+        cachedUsernames = null; // invalidar lista
+
+        // Iniciar sesión directamente tras registrar
+        $('accountUsernameInput').value = username;
+        $('accountPasswordInput').value = password;
+        $('registerForm').classList.add('hide');
+        $('accountForm').classList.remove('hide');
+
+        await handleLogin();
+    } catch (err) {
+        showLockError(err.message || 'Error al crear la cuenta.');
+    } finally {
+        $('registerBtn').disabled = false;
+        $('registerBtn').textContent = 'Crear cuenta';
+    }
+}
+
+$('registerBtn').onclick = handleRegister;
+$('registerPasswordInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleRegister();
+});
+
+$('btnLogout').onclick = async () => {
+    await supabaseClient.auth.signOut();
+    location.reload();
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// 2. CONSOLA DE EVENTOS Y PESTAÑAS DE MODO
+// ══════════════════════════════════════════════════════════════════════
+
 function logEvent(message, type = 'info') {
     const consoleBox = $('consoleBox');
     consoleBox.classList.remove('hide');
@@ -40,113 +204,511 @@ function logEvent(message, type = 'info') {
     consoleBox.scrollTop = consoleBox.scrollHeight;
 }
 
-/**
- * Obtener la lista pública de usuarios registrados desde Supabase profiles
- * (Igual que en el chat principal y uploader.html)
- */
-async function fetchUsernames() {
-    if (cachedUsernames) return cachedUsernames;
+// Conmutar pestañas de modo
+$('tabModeSearch').onclick = () => {
+    $('tabModeSearch').classList.add('active');
+    $('tabModeDirect').classList.remove('active');
+    $('viewSearch').classList.remove('hide');
+    $('viewDirect').classList.add('hide');
+};
+
+$('tabModeDirect').onclick = () => {
+    $('tabModeDirect').classList.add('active');
+    $('tabModeSearch').classList.remove('active');
+    $('viewDirect').classList.remove('hide');
+    $('viewSearch').classList.add('hide');
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// 3. BUSCADOR INTEGRADO DE YOUTUBE
+// ══════════════════════════════════════════════════════════════════════
+
+async function searchYouTube() {
+    const query = $('ytSearchInput').value.trim();
+    if (!query) return;
+
+    const btn = $('btnYtSearch');
+    const resultsGrid = $('searchResultsGrid');
+
     try {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=username&order=username.asc`, {
-            headers: {
-                apikey: SUPABASE_ANON_KEY,
-                Authorization: `Bearer ${SUPABASE_ANON_KEY}`
-            }
+        btn.disabled = true;
+        btn.textContent = 'Buscando...';
+        resultsGrid.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1rem;">Buscando canciones en YouTube...</div>';
+        resultsGrid.classList.remove('hide');
+
+        const res = await fetch('/api/youtube-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, limit: 8 })
         });
-        const data = response.ok ? await response.json() : [];
-        cachedUsernames = Array.isArray(data) ? data.map(p => p.username).filter(Boolean) : [];
-    } catch (e) {
-        console.error('Error al obtener lista de usuarios:', e);
-        cachedUsernames = [];
-    }
-    return cachedUsernames;
-}
 
-/**
- * Alternar el menú desplegable de usuarios
- */
-$('btnToggleUsers').onclick = async () => {
-    const dropdown = $('userDropdown');
-    if (!dropdown.classList.contains('hide')) {
-        dropdown.classList.add('hide');
-        return;
-    }
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error al buscar en YouTube');
 
-    const list = await fetchUsernames();
-    if (list.length > 0) {
-        dropdown.innerHTML = list.map(u => `<option value="${u.replace(/"/g, '&quot;')}">${u.replace(/</g, '&lt;')}</option>`).join('');
-    } else {
-        dropdown.innerHTML = '<option disabled>Sin usuarios registrados</option>';
-    }
-    dropdown.classList.remove('hide');
-};
+        if (!data.results || data.results.length === 0) {
+            resultsGrid.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1rem;">No se encontraron resultados para tu búsqueda.</div>';
+            return;
+        }
 
-$('userDropdown').onchange = (e) => {
-    $('usernameInput').value = e.target.value;
-    e.target.classList.add('hide');
-    $('passwordInput').focus();
-};
+        resultsGrid.innerHTML = '';
+        data.results.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'search-item';
 
-/**
- * Iniciar sesión con la cuenta de Supabase Chat
- */
-async function handleLogin() {
-    const username = $('usernameInput').value.trim();
-    const password = $('passwordInput').value;
-    $('loginErrorMsg').textContent = '';
+            const img = document.createElement('img');
+            img.className = 'search-thumb';
+            img.src = item.thumbnail;
+            img.alt = item.title;
 
-    if (!username || !password) {
-        $('loginErrorMsg').textContent = 'Por favor escribe tu usuario y contraseña.';
-        return;
-    }
+            const info = document.createElement('div');
+            info.className = 'search-info';
 
-    try {
-        $('btnLogin').disabled = true;
-        $('btnLogin').textContent = 'Verificando...';
+            const title = document.createElement('div');
+            title.className = 'search-title';
+            title.textContent = item.title;
+            title.title = item.title;
 
-        const user = await loginAccount(username, password);
-        currentUserId = user.id;
-        currentUsername = username;
+            const channel = document.createElement('div');
+            channel.className = 'search-channel';
+            channel.textContent = `${item.uploader} • ${item.durationString}`;
 
-        // Obtener token de acceso para las peticiones de subida
-        const session = (await supabaseClient.auth.getSession()).data.session;
-        currentAccessToken = session ? session.access_token : null;
+            info.appendChild(title);
+            info.appendChild(channel);
 
-        $('currentUsernameText').textContent = username;
-        $('loginCard').classList.add('hide');
-        $('appCard').classList.remove('hide');
+            const selectBtn = document.createElement('button');
+            selectBtn.type = 'button';
+            selectBtn.className = 'search-btn-select';
+            selectBtn.textContent = 'Seleccionar';
 
-        logEvent(`Sesión iniciada correctamente como @${username}`, 'success');
+            selectBtn.onclick = () => {
+                $('youtubeUrlInput').value = item.url;
+                $('customTitleInput').value = item.cleanTitle || item.title;
 
-        // Cargar álbumes y pistas existentes
-        await loadAlbums();
-        await loadUserTracks();
+                // Previsualizar en la tarjeta
+                $('videoPreviewBox').classList.remove('hide');
+                $('videoThumbImg').src = item.thumbnail;
+                $('videoMetaTitle').textContent = item.title;
+                $('videoMetaDetails').textContent = `${item.uploader} • Duración: ${item.durationString}`;
+
+                logEvent(`Seleccionado: "${item.title}" (${item.durationString})`, 'info');
+
+                // Desplazar al botón de subida
+                $('trackConfigSection').scrollIntoView({ behavior: 'smooth' });
+            };
+
+            row.appendChild(img);
+            row.appendChild(info);
+            row.appendChild(selectBtn);
+            resultsGrid.appendChild(row);
+        });
 
     } catch (err) {
-        $('loginErrorMsg').textContent = err.message || 'Error al iniciar sesión.';
+        resultsGrid.innerHTML = `<div style="color: var(--danger); padding: 0.5rem;">${err.message}</div>`;
     } finally {
-        $('btnLogin').disabled = false;
-        $('btnLogin').textContent = 'Entrar a mi cuenta';
+        btn.disabled = false;
+        btn.textContent = 'Buscar';
     }
 }
 
-$('btnLogin').onclick = handleLogin;
-$('passwordInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') handleLogin();
+$('btnYtSearch').onclick = searchYouTube;
+$('ytSearchInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') searchYouTube();
 });
 
-/**
- * Cerrar sesión
- */
-$('btnLogout').onclick = async () => {
-    await supabaseClient.auth.signOut();
-    location.reload();
+// ══════════════════════════════════════════════════════════════════════
+// 4. ANÁLISIS DE ENLACES INDIVIDUALES Y PLAYLISTS (LISTAS)
+// ══════════════════════════════════════════════════════════════════════
+
+let currentPlaylistData = null;
+
+async function analyzeUrl() {
+    const url = $('youtubeUrlInput').value.trim();
+    if (!url) {
+        logEvent('Ingresa un enlace de YouTube.', 'warn');
+        return;
+    }
+
+    const btn = $('btnFetchInfo');
+    try {
+        btn.disabled = true;
+        btn.textContent = 'Analizando...';
+        logEvent(`Analizando enlace: ${url}`, 'info');
+
+        // Si la URL contiene 'list=', consultar endpoint de playlist
+        if (url.includes('list=')) {
+            const plRes = await fetch('/api/playlist-info', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            const plData = await plRes.json();
+
+            if (plRes.ok && plData.isPlaylist) {
+                currentPlaylistData = plData;
+                showPlaylistView(plData);
+                return;
+            }
+        }
+
+        // Si es video individual
+        const res = await fetch('/api/video-info', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error al obtener datos del video');
+
+        $('playlistBox').classList.add('hide');
+        $('videoPreviewBox').classList.remove('hide');
+        $('videoThumbImg').src = data.thumbnail || '';
+        $('videoMetaTitle').textContent = data.title;
+        $('videoMetaDetails').textContent = `${data.uploader || 'YouTube'} • Duración: ${data.durationString}`;
+
+        if (!$('customTitleInput').value.trim()) {
+            $('customTitleInput').value = data.cleanTitle || data.title;
+        }
+
+        logEvent(`Video analizado: "${data.title}" (${data.durationString})`, 'success');
+
+    } catch (err) {
+        logEvent(err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🔍</span> Analizar';
+    }
+}
+
+$('btnFetchInfo').onclick = analyzeUrl;
+
+function showPlaylistView(plData) {
+    $('videoPreviewBox').classList.add('hide');
+    const box = $('playlistBox');
+    box.classList.remove('hide');
+
+    $('playlistTitleText').textContent = `Playlist: ${plData.playlistTitle}`;
+    $('playlistSubtitleText').textContent = `${plData.trackCount} canciones detectadas`;
+
+    // Pre-llenar el álbum con el título de la playlist si está vacío
+    if (!$('albumInput').value.trim()) {
+        $('albumInput').value = plData.playlistTitle;
+    }
+
+    const list = $('playlistTracksList');
+    list.innerHTML = '';
+
+    plData.tracks.forEach((track, i) => {
+        const row = document.createElement('div');
+        row.className = 'playlist-track-row';
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = true;
+        cb.dataset.trackIndex = i;
+
+        const title = document.createElement('span');
+        title.style.flex = '1';
+        title.style.whiteSpace = 'nowrap';
+        title.style.overflow = 'hidden';
+        title.style.textOverflow = 'ellipsis';
+        title.textContent = `${track.index}. ${track.title} (${track.durationString})`;
+
+        row.appendChild(cb);
+        row.appendChild(title);
+        list.appendChild(row);
+    });
+
+    logEvent(`Playlist detectada: "${plData.playlistTitle}" con ${plData.trackCount} canciones.`, 'success');
+}
+
+$('btnSelectAllPlaylist').onclick = () => {
+    const cbs = document.querySelectorAll('#playlistTracksList input[type="checkbox"]');
+    const someUnchecked = Array.from(cbs).some(c => !c.checked);
+    cbs.forEach(c => c.checked = someUnchecked);
+    $('btnSelectAllPlaylist').textContent = someUnchecked ? 'Desmarcar Todas' : 'Marcar Todas';
 };
 
+// ══════════════════════════════════════════════════════════════════════
+// 5. DETECCIÓN Y COMPARACIÓN DE NOMBRES SIMILARES
+// ══════════════════════════════════════════════════════════════════════
+
 /**
- * Cargar lista de álbumes únicos del usuario
+ * Normalizar título para comparación inteligente
  */
-async function loadAlbums() {
+function normalizeTitle(str) {
+    if (!str) return '';
+    return str
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/\b(128k|192k|256k|320k|kbps|official|video|audio|lyrics|letra|remastered|hd|4k)\b/gi, '')
+        .replace(/[()[\]{}_+\-=|\\/:*?"<>]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+/**
+ * Calcular similitud entre dos títulos de canción (0 a 1)
+ */
+function calculateSimilarity(a, b) {
+    const normA = normalizeTitle(a);
+    const normB = normalizeTitle(b);
+
+    if (normA === normB) return 1.0;
+    if (!normA || !normB) return 0.0;
+
+    // Si una cadena contiene sustancialmente a la otra
+    if (normA.includes(normB) || normB.includes(normA)) {
+        const shorter = Math.min(normA.length, normB.length);
+        const longer = Math.max(normA.length, normB.length);
+        if (shorter / longer >= 0.35) {
+            return 0.85 + 0.15 * (shorter / longer);
+        }
+    }
+
+    // Coeficiente Bigrama Dice
+    const getBigrams = s => {
+        const set = new Set();
+        for (let i = 0; i < s.length - 1; i++) set.add(s.substring(i, i + 2));
+        return set;
+    };
+    const bA = getBigrams(normA);
+    const bB = getBigrams(normB);
+    let common = 0;
+    for (const bg of bA) if (bB.has(bg)) common++;
+    return (2.0 * common) / (bA.size + bB.size);
+}
+
+/**
+ * Buscar si el usuario ya tiene una canción similar en su perfil
+ */
+function findSimilarTrack(candidateTitle) {
+    let bestMatch = null;
+    let highestScore = 0;
+
+    for (const track of myTracksCache) {
+        const score = calculateSimilarity(candidateTitle, track.display_name);
+        if (score > highestScore && score >= 0.55) {
+            highestScore = score;
+            bestMatch = track;
+        }
+    }
+    return bestMatch ? { track: bestMatch, score: highestScore } : null;
+}
+
+/**
+ * Mostrar modal de comparación de canciones similares
+ */
+function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
+    $('modalNewTitle').textContent = newTitle;
+    $('modalNewAlbum').textContent = newAlbum || 'Sin álbum';
+
+    $('modalExistingTitle').textContent = existingTrack.display_name;
+    $('modalExistingAlbum').textContent = existingTrack.album || 'Sin álbum';
+
+    const modalAudioWrap = $('modalAudioCompareWrap');
+    modalAudioWrap.innerHTML = '';
+
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.className = 'btn-secondary';
+    playBtn.style.padding = '4px 10px';
+    playBtn.style.fontSize = '0.8rem';
+    playBtn.textContent = '▶ Escuchar la que ya tienes';
+
+    playBtn.onclick = async () => {
+        try {
+            playBtn.disabled = true;
+            playBtn.textContent = 'Cargando audio...';
+            const signedUrl = await getR2SignedUrl(existingTrack.file_name);
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = signedUrl;
+            audio.autoplay = true;
+            modalAudioWrap.innerHTML = '';
+            modalAudioWrap.appendChild(audio);
+        } catch (err) {
+            alert('Error al reproducir canción existente: ' + err.message);
+            playBtn.disabled = false;
+            playBtn.textContent = '▶ Escuchar la que ya tienes';
+        }
+    };
+    modalAudioWrap.appendChild(playBtn);
+
+    $('similarityModal').classList.remove('hide');
+
+    // Botones de acción del modal
+    $('btnModalUploadAnyway').onclick = () => {
+        $('similarityModal').classList.add('hide');
+        onConfirm();
+    };
+
+    $('btnModalRename').onclick = () => {
+        $('similarityModal').classList.add('hide');
+        $('customTitleInput').focus();
+        $('customTitleInput').select();
+    };
+
+    $('btnModalCancel').onclick = () => {
+        $('similarityModal').classList.add('hide');
+        logEvent('Subida cancelada por el usuario tras verificar similitud.', 'warn');
+    };
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 6. PIPELINE DE CONVERSIÓN Y SUBIDA (INDIVIDUAL O PLAYLIST)
+// ══════════════════════════════════════════════════════════════════════
+
+async function executeUpload(url, customTitle, album) {
+    const sessionRes = await supabaseClient.auth.getSession();
+    const token = sessionRes.data?.session?.access_token || currentAccessToken;
+
+    if (!token) {
+        logEvent('Tu sesión ha expirado. Inicia sesión de nuevo.', 'error');
+        return;
+    }
+
+    const btn = $('btnConvertAndUpload');
+    btn.disabled = true;
+    $('convertBtnIcon').textContent = '⏳';
+    $('convertBtnText').textContent = 'Convirtiendo...';
+
+    logEvent(`Procesando "${customTitle}"...`, 'info');
+    logEvent(`Descargando audio de YouTube y transcodificando a MP3...`, 'info');
+
+    try {
+        const response = await fetch('/api/convert-and-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                url,
+                album: album || null,
+                customTitle,
+                accessToken: token,
+                userId: currentUserId
+            })
+        });
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Error en la conversión');
+
+        logEvent(`✔ ${result.message}`, 'success');
+
+        // Limpiar campos
+        $('youtubeUrlInput').value = '';
+        $('customTitleInput').value = '';
+        $('videoPreviewBox').classList.add('hide');
+
+        await loadAlbumsDataList();
+        await loadUploadedTracks();
+
+    } catch (err) {
+        logEvent(`Error al procesar: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        $('convertBtnIcon').textContent = '⚡';
+        $('convertBtnText').textContent = 'Convertir a MP3 y Subir a mi Perfil';
+    }
+}
+
+// Procesar Playlist en lote
+async function processPlaylistUpload(plData, album) {
+    const cbs = document.querySelectorAll('#playlistTracksList input[type="checkbox"]:checked');
+    const selectedTracks = Array.from(cbs).map(cb => plData.tracks[parseInt(cb.dataset.trackIndex, 10)]);
+
+    if (selectedTracks.length === 0) {
+        logEvent('Selecciona al menos una canción de la lista.', 'warn');
+        return;
+    }
+
+    const btn = $('btnConvertAndUpload');
+    btn.disabled = true;
+
+    logEvent(`Iniciando conversión de playlist: ${selectedTracks.length} canciones al álbum "${album}"`, 'info');
+
+    let successCount = 0;
+    for (let i = 0; i < selectedTracks.length; i++) {
+        const t = selectedTracks[i];
+        $('convertBtnText').textContent = `Procesando [${i + 1}/${selectedTracks.length}]: ${t.title}`;
+        logEvent(`[${i + 1}/${selectedTracks.length}] Descargando "${t.title}"...`, 'info');
+
+        try {
+            const sessionRes = await supabaseClient.auth.getSession();
+            const token = sessionRes.data?.session?.access_token || currentAccessToken;
+
+            const res = await fetch('/api/convert-and-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: t.url,
+                    album: album || null,
+                    customTitle: t.cleanTitle || t.title,
+                    accessToken: token,
+                    userId: currentUserId
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                successCount++;
+                logEvent(`✔ [${i + 1}/${selectedTracks.length}] "${t.title}" agregada.`, 'success');
+            } else {
+                logEvent(`✘ Error en "${t.title}": ${data.error}`, 'error');
+            }
+        } catch (e) {
+            logEvent(`✘ Error en "${t.title}": ${e.message}`, 'error');
+        }
+    }
+
+    logEvent(`Finalizada la playlist: ${successCount} de ${selectedTracks.length} canciones procesadas.`, 'success');
+    btn.disabled = false;
+    $('convertBtnIcon').textContent = '⚡';
+    $('convertBtnText').textContent = 'Convertir a MP3 y Subir a mi Perfil';
+
+    $('playlistBox').classList.add('hide');
+    $('youtubeUrlInput').value = '';
+    currentPlaylistData = null;
+
+    await loadAlbumsDataList();
+    await loadUploadedTracks();
+}
+
+// Handler principal del botón de conversión
+$('btnConvertAndUpload').onclick = async () => {
+    const album = $('albumInput').value.trim() || null;
+
+    // Caso 1: Playlist detectada
+    if (currentPlaylistData && !$('playlistBox').classList.contains('hide')) {
+        await processPlaylistUpload(currentPlaylistData, album);
+        return;
+    }
+
+    // Caso 2: Canción individual
+    const url = $('youtubeUrlInput').value.trim();
+    if (!url) {
+        logEvent('Ingresa un enlace de YouTube o selecciona una canción del buscador.', 'warn');
+        return;
+    }
+
+    let customTitle = $('customTitleInput').value.trim();
+    if (!customTitle) {
+        customTitle = `YouTube_${Date.now()}`;
+    }
+
+    // Comprobar si ya existe una canción con nombre similar en el perfil
+    const match = findSimilarTrack(customTitle);
+    if (match) {
+        showSimilarityModal(customTitle, album, match.track, () => {
+            executeUpload(url, customTitle, album);
+        });
+    } else {
+        await executeUpload(url, customTitle, album);
+    }
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// 7. GESTIÓN Y RENDERIZADO DE ÁLBUMES (IDÉNTICO AL CHAT ORIGINAL)
+// ══════════════════════════════════════════════════════════════════════
+
+async function loadAlbumsDataList() {
     try {
         const { data, error } = await supabaseClient
             .from('music_tracks')
@@ -155,155 +717,15 @@ async function loadAlbums() {
             .not('album', 'is', null);
 
         if (error) throw error;
-
-        const uniqueAlbums = [...new Set((data || []).map(r => r.album))].sort();
-        $('albumDataList').innerHTML = uniqueAlbums
-            .map(album => `<option value="${album.replace(/"/g, '&quot;')}">`)
-            .join('');
-
-    } catch (err) {
-        console.warn('Error al cargar álbumes:', err);
+        const set = [...new Set((data || []).map(r => r.album))].sort();
+        $('albumDataList').innerHTML = set.map(a => `<option value="${a.replace(/"/g, '&quot;')}">`).join('');
+    } catch (e) {
+        console.warn('Error al cargar álbumes:', e);
     }
 }
 
-/**
- * Analizar URL de YouTube y previsualizar video
- */
-async function fetchVideoInfo() {
-    const url = $('youtubeUrlInput').value.trim();
-    if (!url) {
-        logEvent('Ingresa un enlace de YouTube para analizar.', 'warn');
-        return null;
-    }
-
-    try {
-        $('btnFetchInfo').disabled = true;
-        $('btnFetchInfo').textContent = 'Buscando...';
-        logEvent(`Analizando información de YouTube: ${url}`, 'info');
-
-        const response = await fetch('/api/video-info', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url })
-        });
-
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Error al obtener datos del video.');
-
-        // Mostrar caja de previsualización
-        $('videoPreviewBox').classList.remove('hide');
-        $('videoThumbImg').src = data.thumbnail || '';
-        $('videoMetaTitle').textContent = data.title;
-        $('videoMetaDetails').textContent = `${data.uploader || 'YouTube'} • Duración: ${data.durationString}`;
-
-        // Sugerir título limpio si el usuario no ha escrito uno
-        if (!$('customTitleInput').value.trim()) {
-            $('customTitleInput').value = data.cleanTitle || data.title;
-        }
-
-        logEvent(`Video encontrado: "${data.title}" (${data.durationString})`, 'success');
-        return data;
-
-    } catch (err) {
-        logEvent(err.message, 'error');
-        return null;
-    } finally {
-        $('btnFetchInfo').disabled = false;
-        $('btnFetchInfo').innerHTML = '<span>🔍</span> Analizar';
-    }
-}
-
-$('btnFetchInfo').onclick = fetchVideoInfo;
-$('youtubeUrlInput').addEventListener('change', () => {
-    if ($('youtubeUrlInput').value.trim()) fetchVideoInfo();
-});
-
-/**
- * Convertir Video de YouTube a MP3 y subir a R2 / Supabase
- */
-$('btnConvertAndUpload').onclick = async () => {
-    const url = $('youtubeUrlInput').value.trim();
-    if (!url) {
-        logEvent('Ingresa un enlace válido de YouTube.', 'warn');
-        $('youtubeUrlInput').focus();
-        return;
-    }
-
-    let customTitle = $('customTitleInput').value.trim();
-    if (!customTitle) {
-        // Si no analizó antes, intentar obtener el título
-        const info = await fetchVideoInfo();
-        if (info) customTitle = info.cleanTitle || info.title;
-        if (!customTitle) customTitle = `YouTube_${Date.now()}`;
-        $('customTitleInput').value = customTitle;
-    }
-
-    const album = $('albumInput').value.trim() || null;
-
-    // Asegurar token de sesión fresco
-    const sessionRes = await supabaseClient.auth.getSession();
-    const token = sessionRes.data?.session?.access_token || currentAccessToken;
-
-    if (!token) {
-        logEvent('La sesión ha expirado. Inicia sesión nuevamente.', 'error');
-        return;
-    }
-
-    // Bloquear UI durante el procesamiento
-    const btn = $('btnConvertAndUpload');
-    btn.disabled = true;
-    $('convertBtnIcon').textContent = '⏳';
-    $('convertBtnText').textContent = 'Descargando y convirtiendo audio...';
-
-    logEvent(`Iniciando pipeline de conversión para "${customTitle}"...`, 'info');
-    logEvent(`Descargando audio de YouTube y transcodificando a MP3 de alta fidelidad...`, 'info');
-
-    try {
-        const response = await fetch('/api/convert-and-upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                url,
-                album,
-                customTitle,
-                accessToken: token,
-                userId: currentUserId
-            })
-        });
-
-        const result = await response.json();
-        if (!response.ok) {
-            throw new Error(result.error || 'Ocurrió un error en la conversión o subida.');
-        }
-
-        logEvent(`✔ Proceso completado con éxito: ${result.message}`, 'success');
-        if (album) {
-            logEvent(`Asignada al álbum: "${album}"`, 'info');
-        }
-
-        // Limpiar campos de entrada
-        $('youtubeUrlInput').value = '';
-        $('customTitleInput').value = '';
-        $('videoPreviewBox').classList.add('hide');
-
-        // Recargar datos actualizados
-        await loadAlbums();
-        await loadUserTracks();
-
-    } catch (err) {
-        logEvent(`Error en el proceso: ${err.message}`, 'error');
-    } finally {
-        btn.disabled = false;
-        $('convertBtnIcon').textContent = '⚡';
-        $('convertBtnText').textContent = 'Convertir a MP3 y Subir a mi Perfil';
-    }
-};
-
-/**
- * Cargar y mostrar las pistas subidas por el usuario
- */
-async function loadUserTracks() {
-    const container = $('userTracksContainer');
+async function loadUploadedTracks() {
+    const wrap = $('albumsWrapper');
     try {
         const { data: tracks, error } = await supabaseClient
             .from('music_tracks')
@@ -314,38 +736,116 @@ async function loadUserTracks() {
 
         if (error) throw error;
 
-        if (!tracks || tracks.length === 0) {
-            container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1rem; font-size: 0.88rem;">No tienes canciones en tu perfil aún. ¡Convierte tu primer video arriba!</div>';
-            return;
-        }
+        myTracksCache = tracks || [];
+        renderAlbumsView();
 
-        container.innerHTML = '';
+    } catch (err) {
+        wrap.innerHTML = `<div style="color: var(--danger); font-size: 0.85rem; padding: 0.5rem;">Error al cargar canciones: ${err.message}</div>`;
+    }
+}
 
-        for (const track of tracks) {
+$('btnRefreshTracks').onclick = loadUploadedTracks;
+
+/**
+ * Renderiza los grupos de álbumes idénticos al chat original
+ */
+function renderAlbumsView() {
+    const wrap = $('albumsWrapper');
+    const filter = ($('filterTracksInput').value || '').trim().toLowerCase();
+
+    // Filtrar canciones según el buscador local
+    const filteredTracks = filter 
+        ? myTracksCache.filter(t => (t.display_name || '').toLowerCase().includes(filter))
+        : myTracksCache;
+
+    if (filteredTracks.length === 0) {
+        wrap.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 1.5rem; font-size: 0.88rem;">
+            ${filter ? 'No hay canciones que coincidan con el filtro.' : 'No tienes canciones en tu perfil aún. ¡Convierte un video arriba!'}
+        </div>`;
+        return;
+    }
+
+    // Agrupar por álbum
+    const NO_ALBUM_KEY = '__sin_album__';
+    const groups = new Map();
+
+    filteredTracks.forEach(track => {
+        const key = (track.album && track.album.trim()) ? track.album.trim() : NO_ALBUM_KEY;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(track);
+    });
+
+    // Ordenar claves: álbumes alfabéticamente, 'Sin álbum' al final
+    const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
+        if (a === NO_ALBUM_KEY) return 1;
+        if (b === NO_ALBUM_KEY) return -1;
+        return a.localeCompare(b, undefined, { sensitivity: 'base' });
+    });
+
+    wrap.innerHTML = '';
+
+    sortedKeys.forEach(albumKey => {
+        const groupTracks = groups.get(albumKey);
+        const isNoAlbum = albumKey === NO_ALBUM_KEY;
+        const isCollapsed = collapsedAlbums.has(albumKey);
+
+        const groupDiv = document.createElement('div');
+        groupDiv.className = 'album-group';
+
+        // Cabecera del Álbum
+        const header = document.createElement('div');
+        header.className = 'album-header';
+
+        const arrow = document.createElement('span');
+        arrow.className = 'album-toggle-arrow';
+        arrow.textContent = isCollapsed ? '▸' : '▾';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'album-header-title';
+        titleSpan.textContent = `${isNoAlbum ? '📁 Sin álbum' : '💿 ' + albumKey} (${groupTracks.length})`;
+
+        header.appendChild(arrow);
+        header.appendChild(titleSpan);
+
+        // Contenedor de canciones del álbum
+        const tracksContainer = document.createElement('div');
+        tracksContainer.className = 'album-tracks-container';
+        if (isCollapsed) tracksContainer.classList.add('hide');
+
+        header.onclick = () => {
+            if (collapsedAlbums.has(albumKey)) {
+                collapsedAlbums.delete(albumKey);
+                arrow.textContent = '▾';
+                tracksContainer.classList.remove('hide');
+            } else {
+                collapsedAlbums.add(albumKey);
+                arrow.textContent = '▸';
+                tracksContainer.classList.add('hide');
+            }
+        };
+
+        // Renderizar cada canción dentro del álbum
+        groupTracks.forEach(track => {
             const item = document.createElement('div');
-            item.className = 'track-item';
+            item.className = 'radio-item';
 
-            const infoDiv = document.createElement('div');
-            infoDiv.className = 'track-info';
+            const info = document.createElement('div');
+            info.className = 'radio-info';
 
-            const titleSpan = document.createElement('span');
-            titleSpan.className = 'track-title';
-            titleSpan.textContent = track.display_name;
+            const title = document.createElement('span');
+            title.className = 'radio-title';
+            title.textContent = track.display_name;
+            title.title = track.display_name;
 
-            const albumSpan = document.createElement('span');
-            albumSpan.className = 'track-album';
-            albumSpan.textContent = track.album ? `Álbum: ${track.album}` : 'Sin álbum';
+            info.appendChild(title);
 
-            infoDiv.appendChild(titleSpan);
-            infoDiv.appendChild(albumSpan);
+            const actions = document.createElement('div');
+            actions.className = 'radio-actions';
 
-            const playerDiv = document.createElement('div');
-            playerDiv.className = 'track-player';
-
+            // Botón de Reproducción
             const playBtn = document.createElement('button');
+            playBtn.type = 'button';
             playBtn.className = 'btn-secondary';
-            playBtn.style.padding = '0.35rem 0.65rem';
-            playBtn.style.fontSize = '0.82rem';
             playBtn.textContent = '▶ Escuchar';
 
             playBtn.onclick = async () => {
@@ -354,30 +854,84 @@ async function loadUserTracks() {
                     playBtn.textContent = 'Cargando...';
                     const signedUrl = await getR2SignedUrl(track.file_name);
 
-                    // Reemplazar botón con reproductor
                     const audioEl = document.createElement('audio');
                     audioEl.controls = true;
                     audioEl.src = signedUrl;
                     audioEl.autoplay = true;
 
-                    playerDiv.replaceChild(audioEl, playBtn);
+                    actions.replaceChild(audioEl, playBtn);
                 } catch (audioErr) {
-                    alert('Error al reproducir canción: ' + audioErr.message);
+                    alert('Error al reproducir: ' + audioErr.message);
                     playBtn.disabled = false;
                     playBtn.textContent = '▶ Escuchar';
                 }
             };
 
-            playerDiv.appendChild(playBtn);
+            // Botón de Eliminación (🗑️)
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'btn-delete-track';
+            delBtn.textContent = '🗑️';
+            delBtn.title = 'Eliminar canción de tu lista';
 
-            item.appendChild(infoDiv);
-            item.appendChild(playerDiv);
-            container.appendChild(item);
-        }
+            delBtn.onclick = async () => {
+                const confirmed = confirm(`¿Estás seguro de que deseas eliminar "${track.display_name}" de tu perfil?`);
+                if (!confirmed) return;
 
-    } catch (err) {
-        container.innerHTML = `<div style="color: var(--danger); font-size: 0.85rem; padding: 0.5rem;">Error al cargar canciones: ${err.message}</div>`;
-    }
+                try {
+                    delBtn.disabled = true;
+                    delBtn.textContent = '⏳';
+
+                    const { error } = await supabaseClient
+                        .from('music_tracks')
+                        .delete()
+                        .eq('id', track.id);
+
+                    if (error) {
+                        // Si la política de RLS no permite delete, intentar soft-delete
+                        await supabaseClient
+                            .from('music_tracks')
+                            .update({ deleted_at: new Date().toISOString() })
+                            .eq('id', track.id);
+                    }
+
+                    logEvent(`Canción eliminada: "${track.display_name}"`, 'warn');
+                    myTracksCache = myTracksCache.filter(t => t.id !== track.id);
+                    renderAlbumsView();
+                    loadAlbumsDataList();
+
+                } catch (delErr) {
+                    alert('No se pudo eliminar la canción: ' + delErr.message);
+                    delBtn.disabled = false;
+                    delBtn.textContent = '🗑️';
+                }
+            };
+
+            actions.appendChild(playBtn);
+            actions.appendChild(delBtn);
+
+            item.appendChild(info);
+            item.appendChild(actions);
+            tracksContainer.appendChild(item);
+        });
+
+        groupDiv.appendChild(header);
+        groupDiv.appendChild(tracksContainer);
+        wrap.appendChild(groupDiv);
+    });
 }
 
-$('btnRefreshTracks').onclick = loadUserTracks;
+// Botones para Desplegar / Colapsar todos los álbumes
+$('btnExpandAllAlbums').onclick = () => {
+    collapsedAlbums.clear();
+    renderAlbumsView();
+};
+
+$('btnCollapseAllAlbums').onclick = () => {
+    const keys = new Set(myTracksCache.map(t => (t.album && t.album.trim()) ? t.album.trim() : '__sin_album__'));
+    collapsedAlbums = keys;
+    renderAlbumsView();
+};
+
+// Filtro en tiempo real al escribir
+$('filterTracksInput').addEventListener('input', renderAlbumsView);
