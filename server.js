@@ -2,13 +2,12 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.3.0
- * Descripción: Servidor Express robusto con:
- *              - Soporte nativo de Node.js como JavaScript Runtime (--js-runtimes node)
- *              - Pipeline de reintentos automáticos (Retry Loop con rotación de clientes
- *                para erradicar el error HTTP 403 Forbidden de YouTube)
- *              - Búsqueda en tiempo real y lectura de playlists
- *              - Manejador global de errores que garantiza respuestas JSON válidas
+ * Versión: 1.4.0
+ * Descripción: Servidor Express optimizado con:
+ *              - Búsqueda extendida en YouTube (hasta 20-50 resultados por consulta)
+ *              - Soporte para previsualización y pre-escucha antes de descargar
+ *              - Pipeline de reintentos con rotación de clientes y soporte JS runtime
+ *              - Deduplicación por hash SHA-256 en Cloudflare R2 y gestión de álbumes
  * ============================================================================
  */
 
@@ -104,16 +103,16 @@ function formatDuration(seconds) {
 
 /**
  * Endpoint: POST /api/youtube-search
- * Busca canciones directamente en YouTube con reintentos y soporte de JS runtime
+ * Busca canciones en YouTube devolviendo una lista amplia (por defecto 20 resultados)
  */
 app.post('/api/youtube-search', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
-    const { query, limit = 8 } = req.body;
+    const { query, limit = 20 } = req.body;
     if (!query || typeof query !== 'string' || !query.trim()) {
         return res.status(400).json({ error: 'Debes ingresar un término de búsqueda.' });
     }
 
-    const count = Math.min(Math.max(parseInt(limit, 10) || 8, 1), 15);
+    const count = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50);
     const clientOptions = [
         'youtube:player_client=android,web',
         'youtube:player_client=web,android',
@@ -155,7 +154,7 @@ app.post('/api/youtube-search', async (req, res) => {
                 };
             });
 
-            return res.json({ query: query.trim(), results });
+            return res.json({ query: query.trim(), total: results.length, results });
         } catch (err) {
             lastError = err;
             console.warn(`[YouTube Search] Intento ${attempt} falló para "${query}": ${err.message}. Reintentando...`);
@@ -170,7 +169,7 @@ app.post('/api/youtube-search', async (req, res) => {
 
 /**
  * Endpoint: POST /api/playlist-info
- * Detecta si una URL corresponde a una lista de reproducción (Playlist) y lista sus pistas
+ * Detecta y extrae todas las canciones de una lista de reproducción (Playlist)
  */
 app.post('/api/playlist-info', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
@@ -230,7 +229,7 @@ app.post('/api/playlist-info', async (req, res) => {
 
 /**
  * Endpoint: POST /api/video-info
- * Extrae metadatos previos de un video individual con reintentos automáticos
+ * Extrae metadatos previos de un video individual con reintentos
  */
 app.post('/api/video-info', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
@@ -312,7 +311,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
         let downloadSuccess = false;
         let lastDownloadError = null;
 
-        // BUCLE DE REINTENTOS AUTOMÁTICOS (Hasta 3 intentos con rotación de clientes y backoff)
+        // BUCLE DE REINTENTOS AUTOMÁTICOS
         for (let attempt = 1; attempt <= 3; attempt++) {
             try {
                 const clientArg = clientStrategies[attempt - 1] || clientStrategies[0];
@@ -336,25 +335,23 @@ app.post('/api/convert-and-upload', async (req, res) => {
 
                 if (fs.existsSync(expectedMp3Path)) {
                     downloadSuccess = true;
-                    console.log(`[YouTube Convert] Descarga y transcodificación completadas exitosamente en el intento ${attempt}.`);
+                    console.log(`[YouTube Convert] Descarga y transcodificación completadas en el intento ${attempt}.`);
                     break;
                 }
             } catch (dlErr) {
                 lastDownloadError = dlErr;
                 console.warn(`[YouTube Convert] Intento ${attempt} no exitoso: ${dlErr.message}`);
-                // Si el archivo quedó corrupto o a medias, removerlo antes del próximo intento
                 if (fs.existsSync(expectedMp3Path)) {
                     try { fs.unlinkSync(expectedMp3Path); } catch (e) {}
                 }
                 if (attempt < 3) {
-                    console.log(`[YouTube Convert] Esperando para reintentar con cliente alternativo...`);
                     await sleep(1500 * attempt);
                 }
             }
         }
 
         if (!downloadSuccess || !fs.existsSync(expectedMp3Path)) {
-            throw new Error(`No se pudo descargar el audio de YouTube tras 3 intentos automáticos: ${lastDownloadError ? lastDownloadError.message : 'Error 403 Forbidden o formato restringido'}`);
+            throw new Error(`No se pudo descargar el audio tras 3 intentos automáticos: ${lastDownloadError ? lastDownloadError.message : 'Error 403 Forbidden o restricción'}`);
         }
 
         const mp3Buffer = fs.readFileSync(expectedMp3Path);
@@ -472,7 +469,6 @@ app.post('/api/convert-and-upload', async (req, res) => {
             error: err.message || 'Error interno al procesar el video de YouTube.'
         });
     } finally {
-        // Limpieza de archivos temporales
         try {
             if (fs.existsSync(expectedMp3Path)) {
                 fs.unlinkSync(expectedMp3Path);
@@ -491,7 +487,7 @@ app.use((req, res) => {
 // Inicializar el servidor
 app.listen(PORT, () => {
     console.log(`=======================================================`);
-    console.log(` Servidor de Conversión YouTube -> MP3 v1.3.0 activo:`);
+    console.log(` Servidor de Conversión YouTube -> MP3 v1.4.0 activo:`);
     console.log(` http://localhost:${PORT}`);
     console.log(` Conectado a Supabase: ${SUPABASE_URL}`);
     console.log(` Conectado a Media API: ${MEDIA_API_URL}`);

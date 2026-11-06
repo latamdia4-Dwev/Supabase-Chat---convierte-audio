@@ -1,7 +1,7 @@
 {
   "name": "youtube-to-mp3-supabase-chat",
-  "version": "1.3.0",
-  "description": "Conversor de YouTube a MP3 con motor resiliente, rotación de clientes contra 403 Forbidden, soporte de JS runtime en Node, safeFetchJson, buscador, playlists y gestión de álbumes",
+  "version": "1.4.0",
+  "description": "Conversor de YouTube a MP3 con búsqueda extendida (hasta 40 resultados), barra interactiva de pre-escucha antes de descargar, safeFetchJson y gestión de álbumes en Supabase Chat",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -14,7 +14,7 @@
     "supabase",
     "cloudflare-r2",
     "chat",
-    "albums"
+    "preview"
   ],
   "author": "abel",
   "license": "ISC",

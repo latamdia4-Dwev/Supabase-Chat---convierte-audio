@@ -2,11 +2,12 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/styles.css
- * Versión: 1.2.0
+ * Versión: 1.4.0
  * Descripción: Estilos CSS del chat original adaptados para el conversor:
  *              - Pantalla de bloqueo/login idéntica al chat (sin invitados)
  *              - Grupos de álbumes y canciones idénticos al chat
- *              - Buscador interactivo de YouTube y soporte de Playlists
+ *              - Buscador extendido con reproductor de pre-escucha interactivo
+ *              - Barra flotante de previsualización de audio/video
  *              - Modal de comparación de nombres similares
  * ============================================================================
  */
@@ -39,7 +40,7 @@ body {
     background-color: var(--bg-main);
     color: var(--text-white);
     line-height: 1.5;
-    padding: 2rem 1rem;
+    padding: 2rem 1rem 6rem 1rem;
     min-height: 100vh;
     display: flex;
     justify-content: center;
@@ -47,7 +48,7 @@ body {
 
 .container {
     width: 100%;
-    max-width: 720px;
+    max-width: 740px;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
@@ -174,7 +175,6 @@ header p {
     text-align: center;
 }
 
-/* Selector rápido de usuario */
 .user-select-row {
     display: flex;
     gap: 6px;
@@ -241,7 +241,6 @@ header p {
     background-color: rgba(239, 68, 68, 0.3);
 }
 
-/* Pestañas de modo (Buscar en YT vs Enlace directo/Playlist) */
 .nav-tabs {
     display: flex;
     gap: 4px;
@@ -271,7 +270,6 @@ header p {
     color: #111;
 }
 
-/* Formulario */
 .form-group {
     margin-bottom: 1rem;
     display: flex;
@@ -382,6 +380,7 @@ button:disabled {
     flex-direction: column;
     gap: 0.2rem;
     overflow: hidden;
+    flex: 1;
 }
 
 .video-meta-title {
@@ -397,13 +396,24 @@ button:disabled {
     color: var(--text-muted);
 }
 
-/* Resultados de Búsqueda de YouTube */
+/* ══════════════════════════════════════════════════════════════════════
+   RESULTADOS DE BÚSQUEDA Y PRE-ESCUCHA
+   ══════════════════════════════════════════════════════════════════════ */
+.search-controls-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.8rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
 .search-results-grid {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin-top: 1rem;
-    max-height: 380px;
+    margin-top: 0.6rem;
+    max-height: 480px;
     overflow-y: auto;
     padding-right: 4px;
 }
@@ -452,13 +462,110 @@ button:disabled {
     color: var(--text-muted);
 }
 
+.search-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.search-btn-listen {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.8rem;
+    border-radius: var(--radius-pill);
+    background-color: #2c3444;
+    color: #e5e7eb;
+    border: 1px solid #3f4a62;
+}
+
+.search-btn-listen:hover {
+    background-color: #3b465c;
+    color: #fff;
+}
+
 .search-btn-select {
-    padding: 0.4rem 0.8rem;
+    padding: 0.4rem 0.85rem;
     font-size: 0.82rem;
     border-radius: var(--radius-pill);
     background-color: var(--primary);
     color: #111;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   BARRA FLOTANTE DE PRE-ESCUCHA (PREVIEW PLAYER)
+   ══════════════════════════════════════════════════════════════════════ */
+.preview-bar-fixed {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: rgba(18, 22, 30, 0.96);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.7);
+    padding: 10px 1rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    backdrop-filter: blur(8px);
+}
+
+.preview-bar-inner {
+    width: 100%;
+    max-width: 740px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.preview-bar-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow: hidden;
+    flex: 1;
+}
+
+.preview-bar-info span {
+    font-size: 0.88rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #fff;
+}
+
+.preview-iframe-wrap {
+    width: 220px;
+    height: 44px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
     flex-shrink: 0;
+}
+
+.preview-iframe-wrap iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+.btn-close-preview {
+    background: transparent !important;
+    border: 1px solid #444 !important;
+    color: #aaa !important;
+    border-radius: 50% !important;
+    width: 32px !important;
+    height: 32px !important;
+    padding: 0 !important;
+    font-size: 1rem;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.btn-close-preview:hover {
+    color: #fff !important;
+    border-color: #777 !important;
 }
 
 /* Playlist / Listas */
@@ -738,6 +845,14 @@ button:disabled {
 .hide { display: none !important; }
 
 @media (max-width: 600px) {
+    .search-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .search-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
     .radio-item {
         flex-direction: column;
         align-items: flex-start;
@@ -749,5 +864,13 @@ button:disabled {
     }
     .radio-player audio {
         width: 100%;
+    }
+    .preview-bar-inner {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .preview-iframe-wrap {
+        width: 100%;
+        height: 60px;
     }
 }

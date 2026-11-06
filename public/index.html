@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor YouTube a MP3 - Supabase Chat v1.2.0</title>
-    <!-- Estilos de la aplicación v1.2.0 -->
+    <title>Conversor YouTube a MP3 - Supabase Chat v1.4.0</title>
+    <!-- Estilos de la aplicación v1.4.0 -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -67,14 +67,24 @@
                 <button id="tabModeDirect" class="nav-tab" type="button">🔗 Enlace Directo / Playlist</button>
             </div>
 
-            <!-- VISTA 1: Buscador de YouTube Integrado -->
+            <!-- VISTA 1: Buscador de YouTube Integrado con Resultados Amplios y Pre-escucha -->
             <div id="viewSearch">
                 <div class="form-group">
                     <label for="ytSearchInput">Buscar canciones en YouTube</label>
                     <div class="input-row">
-                        <input id="ytSearchInput" type="text" placeholder="Escribe el nombre de la canción o artista...">
+                        <input id="ytSearchInput" type="text" placeholder="Escribe el nombre de la canción o artista (ej. The Rolling Stones)...">
+                        <select id="ytSearchLimitSelect" style="width: auto; padding: 0.85rem 0.6rem; font-size: 0.88rem; flex-shrink: 0;" title="Cantidad de resultados">
+                            <option value="15">15 res.</option>
+                            <option value="25" selected>25 res.</option>
+                            <option value="40">40 res.</option>
+                        </select>
                         <button id="btnYtSearch" class="btn-primary" style="width: auto; padding: 0 1.2rem;" type="button">Buscar</button>
                     </div>
+                </div>
+
+                <div id="searchControlsBar" class="search-controls-bar hide">
+                    <span id="searchResultsCountText"></span>
+                    <span style="font-size: 0.78rem; color: #888;">💡 Puedes presionar "▶ Probar" para escuchar antes de convertir</span>
                 </div>
 
                 <!-- Cuadrícula de Resultados de Búsqueda -->
@@ -115,6 +125,9 @@
                     <div id="videoMetaTitle" class="video-meta-title">Título del video</div>
                     <div id="videoMetaDetails" class="video-meta-sub">Canal • Duración</div>
                 </div>
+                <button id="btnPreviewCurrentVideo" class="btn-secondary" type="button" style="padding: 0.4rem 0.8rem; font-size: 0.82rem; white-space: nowrap;">
+                    ▶ Escuchar previo
+                </button>
             </div>
 
             <!-- Configuración de Metadatos y Álbum -->
@@ -182,6 +195,20 @@
         </section>
 
         <!-- ══════════════════════════════════════════════════════════════════
+             BARRA FLOTANTE DE PRE-ESCUCHA (REPRODUCTOR INMEDIATO ANTES DE SUBIR)
+             ══════════════════════════════════════════════════════════════════ -->
+        <div id="previewFixedBar" class="preview-bar-fixed hide">
+            <div class="preview-bar-inner">
+                <div class="preview-bar-info">
+                    <span style="color: var(--primary);">🎵 Escuchando:</span>
+                    <span id="previewBarTitle"></span>
+                </div>
+                <div class="preview-iframe-wrap" id="previewIframeWrap"></div>
+                <button id="btnClosePreviewBar" class="btn-close-preview" type="button" title="Cerrar preescucha">✕</button>
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════════
              MODAL DE ADVERTENCIA DE CANCIONES SIMILARES (COMPARACIÓN VISUAL)
              ══════════════════════════════════════════════════════════════════ -->
         <div id="similarityModal" class="modal-overlay hide">
@@ -211,7 +238,6 @@
                         <div style="font-size: 0.8rem; color: var(--text-muted);">
                             Álbum actual: <span id="modalExistingAlbum" style="color: var(--warning);"></span>
                         </div>
-                        <!-- Reproductor de comparación para escuchar la existente -->
                         <div id="modalAudioCompareWrap" style="margin-top: 6px;">
                             <button id="btnModalPlayExisting" class="btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" type="button">
                                 ▶ Escuchar la que ya tienes

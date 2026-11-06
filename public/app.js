@@ -2,10 +2,14 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.3.0
- * Descripción: Lógica del cliente con protección contra errores de respuesta
- *              no-JSON (safeFetchJson), reintentos visuales, login del chat,
- *              buscador interactivo, playlists y álbumes agrupados.
+ * Versión: 1.4.0
+ * Descripción: Lógica del cliente con:
+ *              - Búsqueda extendida (15, 25, 40 resultados)
+ *              - Barra de pre-escucha interactiva para verificar audio antes de subir
+ *              - Prevención de errores de respuesta HTML (safeFetchJson)
+ *              - Login idéntico al chat (sin invitados)
+ *              - Detección de canciones similares con modal comparador
+ *              - Grupos de álbumes y eliminación directa en Supabase
  * ============================================================================
  */
 
@@ -18,6 +22,7 @@ let currentUsername = null;
 let cachedUsernames = null;
 let myTracksCache = [];
 let collapsedAlbums = new Set();
+let currentLoadedVideoId = null;
 
 /**
  * Función robusta para realizar fetch esperando JSON, evitando errores de 'Unexpected token <'
@@ -239,32 +244,61 @@ $('tabModeDirect').onclick = () => {
 };
 
 // ══════════════════════════════════════════════════════════════════════
-// 3. BUSCADOR INTEGRADO DE YOUTUBE (PROTEGIDO)
+// 3. BARRA DE PRE-ESCUCHA INTERACTIVA (PREVIEW PLAYER)
+// ══════════════════════════════════════════════════════════════════════
+
+function playPreview(videoId, title) {
+    if (!videoId) return;
+    const bar = $('previewFixedBar');
+    const wrap = $('previewIframeWrap');
+
+    $('previewBarTitle').textContent = title || 'Vista previa';
+    wrap.innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1" allow="autoplay" title="Vista previa"></iframe>`;
+    bar.classList.remove('hide');
+}
+
+function closePreview() {
+    const bar = $('previewFixedBar');
+    const wrap = $('previewIframeWrap');
+    wrap.innerHTML = '';
+    bar.classList.add('hide');
+}
+
+$('btnClosePreviewBar').onclick = closePreview;
+
+// ══════════════════════════════════════════════════════════════════════
+// 4. BUSCADOR EXTENDIDO DE YOUTUBE (HASTA 40 RESULTADOS CON PRE-ESCUCHA)
 // ══════════════════════════════════════════════════════════════════════
 
 async function searchYouTube() {
     const query = $('ytSearchInput').value.trim();
     if (!query) return;
 
+    const limit = parseInt($('ytSearchLimitSelect').value, 10) || 25;
     const btn = $('btnYtSearch');
     const resultsGrid = $('searchResultsGrid');
+    const controlsBar = $('searchControlsBar');
 
     try {
         btn.disabled = true;
         btn.textContent = 'Buscando...';
-        resultsGrid.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1rem;">Buscando canciones en YouTube...</div>';
+        resultsGrid.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Buscando canciones en YouTube...</div>';
         resultsGrid.classList.remove('hide');
+        controlsBar.classList.add('hide');
 
         const data = await safeFetchJson('/api/youtube-search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, limit: 8 })
+            body: JSON.stringify({ query, limit })
         });
 
         if (!data.results || data.results.length === 0) {
-            resultsGrid.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1rem;">No se encontraron resultados para tu búsqueda.</div>';
+            resultsGrid.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No se encontraron resultados para tu búsqueda.</div>';
             return;
         }
+
+        controlsBar.classList.remove('hide');
+        $('searchResultsCountText').textContent = `${data.results.length} canciones encontradas:`;
 
         resultsGrid.innerHTML = '';
         data.results.forEach(item => {
@@ -291,12 +325,28 @@ async function searchYouTube() {
             info.appendChild(title);
             info.appendChild(channel);
 
+            const actions = document.createElement('div');
+            actions.className = 'search-actions';
+
+            // Botón de Pre-escucha antes de descargar
+            const listenBtn = document.createElement('button');
+            listenBtn.type = 'button';
+            listenBtn.className = 'search-btn-listen';
+            listenBtn.textContent = '▶ Probar';
+            listenBtn.title = 'Escuchar vista previa antes de convertir';
+            listenBtn.onclick = () => {
+                playPreview(item.id, item.title);
+            };
+
+            // Botón de Selección
             const selectBtn = document.createElement('button');
             selectBtn.type = 'button';
             selectBtn.className = 'search-btn-select';
-            selectBtn.textContent = 'Seleccionar';
+            selectBtn.textContent = '✔ Elegir';
+            selectBtn.title = 'Seleccionar para convertir a MP3';
 
             selectBtn.onclick = () => {
+                currentLoadedVideoId = item.id;
                 $('youtubeUrlInput').value = item.url;
                 $('customTitleInput').value = item.cleanTitle || item.title;
 
@@ -309,9 +359,12 @@ async function searchYouTube() {
                 $('trackConfigSection').scrollIntoView({ behavior: 'smooth' });
             };
 
+            actions.appendChild(listenBtn);
+            actions.appendChild(selectBtn);
+
             row.appendChild(img);
             row.appendChild(info);
-            row.appendChild(selectBtn);
+            row.appendChild(actions);
             resultsGrid.appendChild(row);
         });
 
@@ -328,8 +381,15 @@ $('ytSearchInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') searchYouTube();
 });
 
+// Botón de preescucha en la tarjeta de previsualización
+$('btnPreviewCurrentVideo').onclick = () => {
+    if (currentLoadedVideoId) {
+        playPreview(currentLoadedVideoId, $('videoMetaTitle').textContent);
+    }
+};
+
 // ══════════════════════════════════════════════════════════════════════
-// 4. ANÁLISIS DE ENLACES INDIVIDUALES Y PLAYLISTS
+// 5. ANÁLISIS DE ENLACES INDIVIDUALES Y PLAYLISTS
 // ══════════════════════════════════════════════════════════════════════
 
 let currentPlaylistData = null;
@@ -367,6 +427,7 @@ async function analyzeUrl() {
             body: JSON.stringify({ url })
         });
 
+        currentLoadedVideoId = data.id;
         $('playlistBox').classList.add('hide');
         $('videoPreviewBox').classList.remove('hide');
         $('videoThumbImg').src = data.thumbnail || '';
@@ -436,7 +497,7 @@ $('btnSelectAllPlaylist').onclick = () => {
 };
 
 // ══════════════════════════════════════════════════════════════════════
-// 5. DETECCIÓN Y COMPARACIÓN DE NOMBRES SIMILARES
+// 6. DETECCIÓN Y COMPARACIÓN DE NOMBRES SIMILARES
 // ══════════════════════════════════════════════════════════════════════
 
 function normalizeTitle(str) {
@@ -547,7 +608,7 @@ function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// 6. PIPELINE DE CONVERSIÓN Y SUBIDA (INDIVIDUAL O PLAYLIST)
+// 7. PIPELINE DE CONVERSIÓN Y SUBIDA (INDIVIDUAL O PLAYLIST)
 // ══════════════════════════════════════════════════════════════════════
 
 async function executeUpload(url, customTitle, album) {
@@ -585,6 +646,7 @@ async function executeUpload(url, customTitle, album) {
         $('youtubeUrlInput').value = '';
         $('customTitleInput').value = '';
         $('videoPreviewBox').classList.add('hide');
+        currentLoadedVideoId = null;
 
         await loadAlbumsDataList();
         await loadUploadedTracks();
@@ -684,7 +746,7 @@ $('btnConvertAndUpload').onclick = async () => {
 };
 
 // ══════════════════════════════════════════════════════════════════════
-// 7. GESTIÓN Y RENDERIZADO DE ÁLBUMES (IDÉNTICO AL CHAT ORIGINAL)
+// 8. GESTIÓN Y RENDERIZADO DE ÁLBUMES (IDÉNTICO AL CHAT ORIGINAL)
 // ══════════════════════════════════════════════════════════════════════
 
 async function loadAlbumsDataList() {
