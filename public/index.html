@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversor YouTube a MP3 - Supabase Chat</title>
+    <!-- Estilos de la aplicación v1.1.0 -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Cabecera -->
+        <header>
+            <h1>Conversor <span>YouTube</span> a MP3</h1>
+            <p>Descarga, convierte y guarda canciones en tu perfil del chat</p>
+        </header>
+
+        <!-- Sección de Inicio de Sesión (Igual que el chat y uploader.html) -->
+        <section id="loginCard" class="card">
+            <h2 style="font-size: 1.2rem; margin-bottom: 1rem; color: #fff;">Iniciar Sesión</h2>
+            
+            <div class="form-group">
+                <label for="usernameInput">Usuario</label>
+                <div class="input-row">
+                    <input id="usernameInput" type="text" placeholder="Escribe tu usuario del chat" autocomplete="username">
+                    <button id="btnToggleUsers" type="button" class="btn-secondary btn-icon" title="Elegir de usuarios registrados">▾</button>
+                </div>
+                <select id="userDropdown" class="hide" size="5" style="margin-top: 0.4rem;"></select>
+            </div>
+
+            <div class="form-group">
+                <label for="passwordInput">Contraseña</label>
+                <input id="passwordInput" type="password" placeholder="Tu contraseña" autocomplete="current-password">
+            </div>
+
+            <button id="btnLogin" class="btn-primary" type="button">Entrar a mi cuenta</button>
+            <div id="loginErrorMsg" style="color: var(--danger); font-size: 0.85rem; margin-top: 0.6rem;"></div>
+        </section>
+
+        <!-- Sección Principal de la Aplicación (Oculta hasta autenticarse) -->
+        <section id="appCard" class="card hide">
+            <!-- Barra de Sesión de Usuario -->
+            <div class="user-bar">
+                <div class="user-badge">
+                    <span>👤</span>
+                    <span>Conectado como: <strong id="currentUsernameText" style="color: #fff;"></strong></span>
+                </div>
+                <button id="btnLogout" class="btn-logout" type="button">Cerrar Sesión</button>
+            </div>
+
+            <!-- Formulario de Conversión de YouTube -->
+            <div style="margin-top: 1.5rem;">
+                <h3 style="font-size: 1.1rem; margin-bottom: 0.8rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <span>🎵</span> Convertir Video de YouTube
+                </h3>
+
+                <div class="form-group">
+                    <label for="youtubeUrlInput">Enlace del Video de YouTube</label>
+                    <div class="input-row">
+                        <input id="youtubeUrlInput" type="url" placeholder="https://www.youtube.com/watch?v=... o https://youtu.be/...">
+                        <button id="btnFetchInfo" class="btn-secondary" type="button" style="white-space: nowrap;">
+                            <span>🔍</span> Analizar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tarjeta de Previsualización del Video -->
+                <div id="videoPreviewBox" class="video-preview hide">
+                    <img id="videoThumbImg" class="video-thumb" src="" alt="Miniatura">
+                    <div class="video-meta">
+                        <div id="videoMetaTitle" class="video-meta-title">Título del video</div>
+                        <div id="videoMetaDetails" class="video-meta-sub">Canal • Duración</div>
+                    </div>
+                </div>
+
+                <!-- Título Personalizado de la Canción -->
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label for="customTitleInput">Nombre de la Canción (en tu perfil)</label>
+                    <input id="customTitleInput" type="text" placeholder="Nombre con el que aparecerá en el chat">
+                </div>
+
+                <!-- Selección o Creación de Álbum -->
+                <div class="form-group">
+                    <label for="albumInput">Álbum en tu Perfil (opcional)</label>
+                    <input id="albumInput" list="albumDataList" placeholder="Escribe un nuevo álbum o elige uno existente (vacío = sin álbum)">
+                    <datalist id="albumDataList"></datalist>
+                    <small style="color: var(--text-muted); font-size: 0.78rem; margin-top: 0.2rem;">
+                        Si escribes un álbum que no existe, se creará automáticamente en tu perfil.
+                    </small>
+                </div>
+
+                <!-- Botón de Acción Principal -->
+                <button id="btnConvertAndUpload" class="btn-primary" type="button" style="margin-top: 1rem; padding: 1rem;">
+                    <span id="convertBtnIcon">⚡</span>
+                    <span id="convertBtnText">Convertir a MP3 y Subir a mi Perfil</span>
+                </button>
+            </div>
+
+            <!-- Consola de Eventos y Progreso en Vivo -->
+            <div id="consoleBox" class="console-box hide">
+                <div class="console-line info">
+                    <span>❯</span>
+                    <span>Consola lista. Esperando instrucciones...</span>
+                </div>
+            </div>
+
+            <!-- Historial de Pistas del Usuario -->
+            <div style="margin-top: 2rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+                    <h3 style="font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <span>📂</span> Mis Canciones en el Chat
+                    </h3>
+                    <button id="btnRefreshTracks" class="btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.82rem;" type="button">
+                        ↻ Actualizar
+                    </button>
+                </div>
+                <div id="userTracksContainer" class="track-list">
+                    <div style="text-align: center; color: var(--text-muted); padding: 1rem; font-size: 0.88rem;">
+                        Cargando tus canciones...
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Dependencias oficiales de Supabase y Scripts de Configuración / Auth del Chat -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/js/config.js"></script>
+    <script src="/js/media-api.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

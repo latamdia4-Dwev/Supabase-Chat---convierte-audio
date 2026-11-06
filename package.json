@@ -1,13 +1,24 @@
 {
-  "name": "supabase-chat---convierte-audio",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "youtube-to-mp3-supabase-chat",
+  "version": "1.1.0",
+  "description": "Conversor de videos de YouTube a formato MP3 con almacenamiento en Cloudflare R2 y vinculación a perfiles y álbumes de Supabase Chat",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "youtube",
+    "mp3",
+    "audio",
+    "supabase",
+    "cloudflare-r2",
+    "chat"
+  ],
+  "author": "abel",
   "license": "ISC",
-  "type": "commonjs"
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
 }
