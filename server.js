@@ -1,20 +1,20 @@
-/**
+﻿/**
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.8.5
- * Descripción: Servidor Express optimizado y enfocado en YouTube:
+ * VersiÃ³n: 1.8.5
+ * DescripciÃ³n: Servidor Express optimizado y enfocado en YouTube:
  *              - Soporte de certificados SSL universales (--no-check-certificates)
- *              - Prevención de bloqueos por validación de certificado en Windows/Linux
- *              - Descarga y transcodificación acelerada con Node runtime y rotación de clientes
- *              - Búsqueda extendida en YouTube (hasta 50 resultados por consulta)
- *              - Barra interactiva de previsualización y pre-escucha antes de descargar
- *              - Pipeline de conversión YouTube a MP3 de alta fidelidad (yt-dlp + FFmpeg)
+ *              - PrevenciÃ³n de bloqueos por validaciÃ³n de certificado en Windows/Linux
+ *              - Descarga y transcodificaciÃ³n acelerada con Node runtime y rotaciÃ³n de clientes
+ *              - BÃºsqueda extendida en YouTube (hasta 50 resultados por consulta)
+ *              - Barra interactiva de previsualizaciÃ³n y pre-escucha antes de descargar
+ *              - Pipeline de conversiÃ³n YouTube a MP3 de alta fidelidad (yt-dlp + FFmpeg)
  *              - Soporte nativo de JS runtime (--js-runtimes node) para n-tokens
- *              - Reintentos automáticos con rotación de clientes contra HTTP 403 Forbidden
- *              - Deduplicación por hash SHA-256 en Cloudflare R2 y gestión de álbumes
+ *              - Reintentos automÃ¡ticos con rotaciÃ³n de clientes contra HTTP 403 Forbidden
+ *              - DeduplicaciÃ³n por hash SHA-256 en Cloudflare R2 y gestiÃ³n de Ã¡lbumes
  *              - Soporte multiplataforma nativo (Windows y Linux para Render.com)
- *              - Prevención y manejo amigable de errores de puerto ocupado (EADDRINUSE)
+ *              - PrevenciÃ³n y manejo amigable de errores de puerto ocupado (EADDRINUSE)
  * ============================================================================
  */
 
@@ -25,11 +25,25 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
+const https = require('https');
+
+// â”€â”€â”€ Fix SSL para fetch nativo en Node 24 con certificados intermedios en Windows â”€â”€â”€
+// Permite que fetch() y https.request() acepten certificados autofirmados/intermedios
+// sin exponer NODE_TLS_REJECT_UNAUTHORIZED=0 de forma global (sÃ³lo agente https)
+const insecureAgent = new https.Agent({ rejectUnauthorized: false });
+
+/**
+ * fetchInsecure â€” igual que fetch() pero con rejectUnauthorized:false
+ * Usar sÃ³lo para llamadas internas a Cloudflare Workers / Supabase en entorno local Windows.
+ */
+function fetchInsecure(url, options = {}) {
+    return fetch(url, { ...options, agent: insecureAgent });
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuración de Supabase y Media API (Cloudflare Worker R2)
+// ConfiguraciÃ³n de Supabase y Media API (Cloudflare Worker R2)
 const SUPABASE_URL = "https://avdklsfhaoznpzqlxapc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2ZGtsc2ZoYW96bnB6cWx4YXBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4OTc2MTgsImV4cCI6MjEwOTQ3MzYxOH0.8piH_mC0qvfyka3Vrcc00Ij6DLSZxPFRuwkg5HkX9-Y";
 const MEDIA_API_URL = "https://chat-media.latamdia4.workers.dev";
@@ -59,12 +73,12 @@ app.use(express.urlencoded({ extended: true }));
 // Confiar en cabeceras de proxy inverso (necesario en Render para HTTPS correcto)
 app.enable('trust proxy');
 
-// Servir frontend y recursos estáticos
+// Servir frontend y recursos estÃ¡ticos
 app.use(express.static(path.join(ROOT_DIR, 'public')));
 app.use('/js', express.static(path.join(ROOT_DIR, 'js')));
 
 /**
- * Función auxiliar para limpiar nombres de archivo de caracteres no permitidos
+ * FunciÃ³n auxiliar para limpiar nombres de archivo de caracteres no permitidos
  */
 function sanitizeFileName(name) {
     if (!name) return 'cancion';
@@ -75,12 +89,12 @@ function sanitizeFileName(name) {
 }
 
 /**
- * Función de pausa asíncrona para retroceso exponencial en reintentos
+ * FunciÃ³n de pausa asÃ­ncrona para retroceso exponencial en reintentos
  */
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Ejecutar procesos de forma asíncrona mediante promesas
+ * Ejecutar procesos de forma asÃ­ncrona mediante promesas
  */
 function runProcess(cmdPath, args) {
     return new Promise((resolve, reject) => {
@@ -95,7 +109,7 @@ function runProcess(cmdPath, args) {
             if (code === 0) {
                 resolve({ stdout, stderr });
             } else {
-                reject(new Error(`El proceso falló con código ${code}: ${stderr || stdout}`));
+                reject(new Error(`El proceso fallÃ³ con cÃ³digo ${code}: ${stderr || stdout}`));
             }
         });
 
@@ -116,9 +130,9 @@ function formatDuration(seconds) {
     return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s}` : `${m}:${s}`;
 }
 
-// ══════════════════════════════════════════════════════════════════════
-// ENDPOINTS DE YOUTUBE (BÚSQUEDA EXTENDIDA, ANÁLISIS, CONVERSIÓN)
-// ══════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ENDPOINTS DE YOUTUBE (BÃšSQUEDA EXTENDIDA, ANÃLISIS, CONVERSIÃ“N)
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 /**
  * Endpoint: POST /api/youtube-search
@@ -128,7 +142,7 @@ app.post('/api/youtube-search', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const { query, limit = 20 } = req.body;
     if (!query || typeof query !== 'string' || !query.trim()) {
-        return res.status(400).json({ error: 'Debes ingresar un término de búsqueda.' });
+        return res.status(400).json({ error: 'Debes ingresar un tÃ©rmino de bÃºsqueda.' });
     }
 
     const count = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50);
@@ -177,7 +191,7 @@ app.post('/api/youtube-search', async (req, res) => {
             return res.json({ query: query.trim(), total: results.length, results });
         } catch (err) {
             lastError = err;
-            console.warn(`[YouTube Search] Intento ${attempt} falló para "${query}": ${err.message}. Reintentando...`);
+            console.warn(`[YouTube Search] Intento ${attempt} fallÃ³ para "${query}": ${err.message}. Reintentando...`);
             if (attempt < 3) await sleep(1200 * attempt);
         }
     }
@@ -189,13 +203,13 @@ app.post('/api/youtube-search', async (req, res) => {
 
 /**
  * Endpoint: POST /api/playlist-info
- * Detecta y extrae todas las canciones de una lista de reproducción (Playlist) de YouTube
+ * Detecta y extrae todas las canciones de una lista de reproducciÃ³n (Playlist) de YouTube
  */
 app.post('/api/playlist-info', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const { url } = req.body;
     if (!url || typeof url !== 'string' || !url.trim()) {
-        return res.status(400).json({ error: 'Debes proporcionar una URL válida de playlist.' });
+        return res.status(400).json({ error: 'Debes proporcionar una URL vÃ¡lida de playlist.' });
     }
 
     try {
@@ -244,7 +258,7 @@ app.post('/api/playlist-info', async (req, res) => {
         });
     } catch (err) {
         console.error('Error al obtener playlist:', err);
-        return res.status(500).json({ error: 'No se pudo leer la lista de reproducción. Verifica que sea pública.' });
+        return res.status(500).json({ error: 'No se pudo leer la lista de reproducciÃ³n. Verifica que sea pÃºblica.' });
     }
 });
 
@@ -256,7 +270,7 @@ app.post('/api/video-info', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const { url } = req.body;
     if (!url || typeof url !== 'string' || !url.trim()) {
-        return res.status(400).json({ error: 'Debes proporcionar una URL válida de YouTube.' });
+        return res.status(400).json({ error: 'Debes proporcionar una URL vÃ¡lida de YouTube.' });
     }
 
     const clientOptions = [
@@ -294,27 +308,27 @@ app.post('/api/video-info', async (req, res) => {
             });
         } catch (err) {
             lastError = err;
-            console.warn(`[Video Info] Intento ${attempt} falló para "${url}": ${err.message}`);
+            console.warn(`[Video Info] Intento ${attempt} fallÃ³ para "${url}": ${err.message}`);
             if (attempt < 3) await sleep(1200 * attempt);
         }
     }
 
     return res.status(500).json({
-        error: `No se pudo obtener la información del video tras 3 intentos: ${lastError ? lastError.message : 'Error desconocido'}`
+        error: `No se pudo obtener la informaciÃ³n del video tras 3 intentos: ${lastError ? lastError.message : 'Error desconocido'}`
     });
 });
 
 /**
  * Endpoint: POST /api/convert-and-upload
- * Orquesta la descarga de audio de YouTube con REINTENTOS AUTOMÁTICOS ante errores 403 Forbidden,
- * transcodificación a MP3, hash SHA-256, subida a R2 y registro en Supabase.
+ * Orquesta la descarga de audio de YouTube con REINTENTOS AUTOMÃTICOS ante errores 403 Forbidden,
+ * transcodificaciÃ³n a MP3, hash SHA-256, subida a R2 y registro en Supabase.
  */
 app.post('/api/convert-and-upload', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const { url, album, customTitle, accessToken, userId } = req.body;
 
     if (!url || !accessToken || !userId) {
-        return res.status(400).json({ error: 'Faltan parámetros requeridos (url, accessToken, userId).' });
+        return res.status(400).json({ error: 'Faltan parÃ¡metros requeridos (url, accessToken, userId).' });
     }
 
     const tempId = crypto.randomUUID();
@@ -328,12 +342,12 @@ app.post('/api/convert-and-upload', async (req, res) => {
     ];
 
     try {
-        console.log(`[YouTube Convert] Iniciando pipeline de conversión para: ${url}`);
+        console.log(`[YouTube Convert] Iniciando pipeline de conversiÃ³n para: ${url}`);
 
         let downloadSuccess = false;
         let lastDownloadError = null;
 
-        // BUCLE DE REINTENTOS AUTOMÁTICOS
+        // BUCLE DE REINTENTOS AUTOMÃTICOS
         for (let attempt = 1; attempt <= 3; attempt++) {
             try {
                 const clientArg = clientStrategies[attempt - 1] || clientStrategies[0];
@@ -358,7 +372,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
 
                 if (fs.existsSync(expectedMp3Path)) {
                     downloadSuccess = true;
-                    console.log(`[YouTube Convert] Descarga y transcodificación completadas en el intento ${attempt}.`);
+                    console.log(`[YouTube Convert] Descarga y transcodificaciÃ³n completadas en el intento ${attempt}.`);
                     break;
                 }
             } catch (dlErr) {
@@ -374,12 +388,12 @@ app.post('/api/convert-and-upload', async (req, res) => {
         }
 
         if (!downloadSuccess || !fs.existsSync(expectedMp3Path)) {
-            throw new Error(`No se pudo descargar el audio tras 3 intentos automáticos: ${lastDownloadError ? lastDownloadError.message : 'Error 403 Forbidden o restricción'}`);
+            throw new Error(`No se pudo descargar el audio tras 3 intentos automÃ¡ticos: ${lastDownloadError ? lastDownloadError.message : 'Error 403 Forbidden o restricciÃ³n'}`);
         }
 
         const mp3Buffer = fs.readFileSync(expectedMp3Path);
 
-        // 2. Calcular SHA-256 del archivo de audio para deduplicación
+        // 2. Calcular SHA-256 del archivo de audio para deduplicaciÃ³n
         const fileHash = crypto.createHash('sha256').update(mp3Buffer).digest('hex');
         console.log(`[YouTube Convert] Hash SHA-256 calculado: ${fileHash}`);
 
@@ -389,10 +403,10 @@ app.post('/api/convert-and-upload', async (req, res) => {
             displayName = `YouTube_${Date.now()}`;
         }
 
-        // 4. Deduplicación por hash: llamar RPC find_active_track_by_hash en Supabase
+        // 4. DeduplicaciÃ³n por hash: llamar RPC find_active_track_by_hash en Supabase
         let fileName = null;
         try {
-            const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/find_active_track_by_hash`, {
+            const rpcRes = await fetchInsecure(`${SUPABASE_URL}/rest/v1/rpc/find_active_track_by_hash`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -410,7 +424,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
                 }
             }
         } catch (rpcErr) {
-            console.warn('[YouTube Convert] Aviso en verificación de RPC de hash:', rpcErr);
+            console.warn('[YouTube Convert] Aviso en verificaciÃ³n de RPC de hash:', rpcErr);
         }
 
         // 5. Si no existe previamente en R2, subir el MP3 a Cloudflare R2 Worker con reintentos
@@ -421,7 +435,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
 
             for (let upAttempt = 1; upAttempt <= 3; upAttempt++) {
                 try {
-                    uploadRes = await fetch(`${MEDIA_API_URL}/upload/music`, {
+                    uploadRes = await fetchInsecure(`${MEDIA_API_URL}/upload/music`, {
                         method: 'POST',
                         headers: {
                             Authorization: `Bearer ${accessToken}`,
@@ -438,7 +452,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
                         break;
                     }
                 } catch (upErr) {
-                    console.warn(`[YouTube Convert] Intento de subida a R2 ${upAttempt} falló:`, upErr);
+                    console.warn(`[YouTube Convert] Intento de subida a R2 ${upAttempt} fallÃ³:`, upErr);
                     if (upAttempt < 3) await sleep(1000 * upAttempt);
                 }
             }
@@ -452,7 +466,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
 
         // 6. Guardar fila en tabla music_tracks de Supabase vinculada al perfil del usuario
         const finalAlbum = album && album.trim() ? album.trim() : null;
-        const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/music_tracks`, {
+        const insertRes = await fetchInsecure(`${SUPABASE_URL}/rest/v1/music_tracks`, {
             method: 'POST',
             headers: {
                 apikey: SUPABASE_ANON_KEY,
@@ -483,7 +497,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
         return res.json({
             success: true,
             track: createdTrack,
-            message: `Canción "${displayName}" convertida y agregada a tu perfil exitosamente.`
+            message: `CanciÃ³n "${displayName}" convertida y agregada a tu perfil exitosamente.`
         });
 
     } catch (err) {
@@ -522,8 +536,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 
 server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-        console.error(`\n[ERROR CRÍTICO] El puerto ${PORT} ya está en uso.`);
-        console.error(`Si tienes otra terminal abierta corriendo el servidor, ciérrala.`);
+        console.error(`\n[ERROR CRÃTICO] El puerto ${PORT} ya estÃ¡ en uso.`);
+        console.error(`Si tienes otra terminal abierta corriendo el servidor, ciÃ©rrala.`);
         console.error(`O para liberar el puerto en PowerShell, ejecuta:`);
         console.error(`Stop-Process -Name node -Force\n`);
         process.exit(1);
@@ -531,3 +545,4 @@ server.on('error', (err) => {
         console.error('[ERROR]', err);
     }
 });
+
