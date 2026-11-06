@@ -2,17 +2,15 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.8.1
+ * Versión: 1.8.2
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
- *              - Prevención integral de bloqueos en botón de conversión y subida
- *              - Botón de desbloqueo/restablecimiento manual de emergencia
- *              - Modal interactivo de canciones similares con renombrado in-situ y cierre limpio
- *              - Bypass de similitud aprobado por el usuario (sin bucles de advertencias repetitivas)
- *              - Botón de conversión directa de un solo clic desde la lista de búsqueda
- *              - Timeouts de red seguros con AbortController en safeFetchJson
- *              - Recuperación automática ante expiración de sesión
- *              - Login idéntico al chat con lista completa de usuarios en botón ▾
- *              - Barra interactiva de pre-escucha y grupos de álbumes idénticos al chat
+ *              - Corrección crítica de cierre inmediato y parpadeo en modal de similitud
+ *              - Eliminación de listeners de cierre accidental en overlay backdrop
+ *              - Protección de propagación de eventos (stopPropagation/preventDefault)
+ *              - Umbral de similitud calibrado a 0.72 para eliminar falsos positivos
+ *              - Memoria de bypass para canciones confirmadas por el usuario
+ *              - Botón de desbloqueo manual de emergencia
+ *              - Barra de pre-escucha y álbumes colapsables idénticos al chat original
  * ============================================================================
  */
 
@@ -608,7 +606,7 @@ function findSimilarTrack(candidateTitle) {
 
     for (const track of myTracksCache) {
         const score = calculateSimilarity(candidateTitle, track.display_name);
-        if (score > highestScore && score >= 0.65) {
+        if (score > highestScore && score >= 0.72) {
             highestScore = score;
             bestMatch = track;
         }
@@ -616,7 +614,14 @@ function findSimilarTrack(candidateTitle) {
     return bestMatch ? { track: bestMatch, score: highestScore } : null;
 }
 
-function closeSimilarityModal() {
+let modalOpenedAt = 0;
+
+function closeSimilarityModal(force = false) {
+    // Protección contra cierre accidental inmediato (rebotes de eventos < 300ms)
+    if (!force && Date.now() - modalOpenedAt < 300) {
+        return;
+    }
+
     const modal = $('similarityModal');
     if (!modal) return;
     modal.classList.add('hide');
@@ -631,7 +636,7 @@ function closeSimilarityModal() {
 }
 
 function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
-    closeSimilarityModal();
+    modalOpenedAt = Date.now();
 
     $('modalNewTitle').textContent = newTitle;
     $('modalNewAlbum').textContent = newAlbum || 'Sin álbum';
@@ -640,6 +645,8 @@ function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
     $('modalExistingAlbum').textContent = existingTrack.album || 'Sin álbum';
 
     $('modalRenameInput').value = newTitle;
+    $('modalRenameSection').classList.add('hide');
+    $('btnModalRename').textContent = 'Cambiar Nombre';
 
     const modalAudioWrap = $('modalAudioCompareWrap');
     modalAudioWrap.innerHTML = '';
@@ -651,7 +658,8 @@ function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
     playBtn.style.fontSize = '0.8rem';
     playBtn.textContent = '▶ Escuchar la que ya tienes';
 
-    playBtn.onclick = async () => {
+    playBtn.onclick = async (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         try {
             playBtn.disabled = true;
             playBtn.textContent = 'Cargando audio...';
@@ -673,14 +681,21 @@ function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
     $('similarityModal').classList.remove('hide');
 
     // Opción 1: Subir de todos modos
-    $('btnModalUploadAnyway').onclick = () => {
+    $('btnModalUploadAnyway').onclick = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        const btnUpload = $('btnModalUploadAnyway');
+        btnUpload.disabled = true;
+        btnUpload.textContent = '⏳ Subiendo...';
         bypassedSimilarityTitles.add(normalizeTitle(newTitle));
-        closeSimilarityModal();
+        closeSimilarityModal(true);
+        btnUpload.disabled = false;
+        btnUpload.textContent = 'Subir de todos modos';
         onConfirm(newTitle);
     };
 
     // Opción 2: Cambiar Nombre in-situ
-    $('btnModalRename').onclick = () => {
+    $('btnModalRename').onclick = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         const renameSection = $('modalRenameSection');
         if (renameSection.classList.contains('hide')) {
             renameSection.classList.remove('hide');
@@ -691,39 +706,34 @@ function showSimilarityModal(newTitle, newAlbum, existingTrack, onConfirm) {
             const updatedTitle = $('modalRenameInput').value.trim() || newTitle;
             $('customTitleInput').value = updatedTitle;
             bypassedSimilarityTitles.add(normalizeTitle(updatedTitle));
-            closeSimilarityModal();
+            closeSimilarityModal(true);
             onConfirm(updatedTitle);
         }
     };
 
     // Opción 3: Cancelar
-    $('btnModalCancel').onclick = () => {
-        closeSimilarityModal();
+    $('btnModalCancel').onclick = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        closeSimilarityModal(true);
         logEvent('Subida cancelada por el usuario tras verificar similitud.', 'warn');
         resetConvertButtonState();
     };
 
     // Botón Cruz ✕
     if ($('btnModalCloseCross')) {
-        $('btnModalCloseCross').onclick = () => {
-            closeSimilarityModal();
+        $('btnModalCloseCross').onclick = (e) => {
+            if (e) { e.preventDefault(); e.stopPropagation(); }
+            closeSimilarityModal(true);
             resetConvertButtonState();
         };
     }
 }
 
-// Cierre del modal con clic fuera o tecla Escape
-$('similarityModal').addEventListener('click', (e) => {
-    if (e.target === $('similarityModal')) {
-        closeSimilarityModal();
-        resetConvertButtonState();
-    }
-});
-
+// Cierre seguro únicamente mediante tecla Escape (tras 400ms de apertura)
 window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         if (!$('similarityModal').classList.contains('hide')) {
-            closeSimilarityModal();
+            closeSimilarityModal(false);
             resetConvertButtonState();
         }
     }
@@ -865,7 +875,11 @@ $('btnResetConvertState').onclick = () => {
     logEvent('Botón de conversión restablecido manualmente.', 'warn');
 };
 
-$('btnConvertAndUpload').onclick = async () => {
+$('btnConvertAndUpload').onclick = async (e) => {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
     const btn = $('btnConvertAndUpload');
     if (btn.disabled) return;
 
