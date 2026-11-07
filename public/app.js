@@ -2,14 +2,12 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.9.0
+ * Versión: 1.8.5
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
  *              - Resaltado visual interactivo y badge animado en la canción de YouTube en reproducción
  *              - Tarjeta inline inamovible de comparación de duplicados
  *              - Sincronización en tiempo real del reproductor previo y resultados de búsqueda
- *              - Cache-busting estricto (?v=1.9.0) y soporte SSL universal en backend
- *              - [v1.9.0] Preview de YouTube via /api/yt-proxy para redes restringidas
- *              - [v1.9.0] Mensajes de error descriptivos para timeouts y proxy bloqueado
+ *              - Cache-busting estricto (?v=1.8.5) y soporte SSL universal en backend
  * ============================================================================
  */
 
@@ -55,9 +53,6 @@ async function safeFetchJson(url, options = {}, timeoutMs = 180000) {
     } else {
         const text = await res.text();
         if (!res.ok) {
-            if (res.status === 504) {
-                throw new Error('El servidor o red devolvió Error 504 (Gateway Timeout): YouTube no respondió a tiempo. Si estás en una red restringida, configura YOUTUBE_PROXY=http://tu-proxy:puerto en el archivo .env o verifica que tu archivo cookies.txt no haya expirado.');
-            }
             throw new Error(`El servidor devolvió error ${res.status}. Reinicia el servidor en la terminal con "npm start" para aplicar los cambios.`);
         }
         try {
@@ -352,11 +347,7 @@ function playPreview(videoId, title) {
     const wrap = $('previewIframeWrap');
 
     $('previewBarTitle').textContent = title || 'Vista previa';
-    // [v1.9.0] Usar el proxy local del servidor para evitar bloqueos de youtube.com en redes restringidas.
-    // En lugar de apuntar al embed de youtube.com directamente (bloqueado en redes corporativas),
-    // usamos /api/yt-proxy?videoId=XXX que sirve la misma página desde localhost (mismo origen).
-    const proxyUrl = '/api/yt-proxy?videoId=' + videoId;
-    wrap.innerHTML = `<iframe src="${proxyUrl}" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen title="Vista previa de YouTube"></iframe>`;
+    wrap.innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1" allow="autoplay" title="Vista previa"></iframe>`;
     bar.classList.remove('hide');
 
     updatePlayingPreviewHighlight();

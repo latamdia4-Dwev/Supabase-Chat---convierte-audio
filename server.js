@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.9.0
+ * Versión: 1.8.7
  * Descripción: Servidor Express optimizado y enfocado en YouTube:
  *              - Soporte de certificados SSL universales (--no-check-certificates)
  *              - Prevención de bloqueos por validación de certificado en Windows/Linux
@@ -15,10 +15,6 @@
  *              - Deduplicación por hash SHA-256 en Cloudflare R2 y gestión de álbumes
  *              - Soporte multiplataforma nativo (Windows y Linux para Render.com)
  *              - Prevención y manejo amigable de errores de puerto ocupado (EADDRINUSE)
- *              - [v1.9.0] Timeout por proceso con señal SIGTERM para evitar cuelgues en 504
- *              - [v1.9.0] Endpoint proxy /api/yt-proxy para previsualización en redes restringidas
- *              - [v1.9.0] Propagación automática de YOUTUBE_PROXY a yt-dlp con --socket-timeout
- *              - [v1.9.0] Mensajes de error descriptivos para timeouts y red bloqueada
  * ============================================================================
  */
 
@@ -30,7 +26,6 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const https = require('https');
-const http = require('http');
 
 // --- Fix SSL para fetch nativo en Node 24 con certificados intermedios en Windows ---
 const insecureAgent = new https.Agent({ rejectUnauthorized: false });
@@ -97,48 +92,26 @@ function sanitizeFileName(name) {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Ejecutar procesos de forma asíncrona mediante promesas con timeout configurable.
- * @param {string} cmdPath   - Ruta al ejecutable
- * @param {string[]} args    - Argumentos del proceso
- * @param {number} timeoutMs - Tiempo máximo en ms (default: 5 minutos).
- *                             Si se supera, el proceso se mata con SIGTERM y se rechaza.
- *                             Evita que el proxy upstream devuelva 504 silenciosamente.
- * [v1.9.0] Timeout añadido para cortar yt-dlp si la red bloquea la conexión.
+ * Ejecutar procesos de forma asíncrona mediante promesas
  */
-function runProcess(cmdPath, args, timeoutMs = 300000) {
+function runProcess(cmdPath, args) {
     return new Promise((resolve, reject) => {
         const proc = spawn(cmdPath, args, { windowsHide: true });
         let stdout = '';
         let stderr = '';
-        let killed = false;
-
-        // Matar el proceso si excede el tiempo límite
-        const timer = setTimeout(() => {
-            if (!killed) {
-                killed = true;
-                try { proc.kill('SIGTERM'); } catch (e) {}
-                reject(new Error(
-                    `El proceso yt-dlp excedio el tiempo limite de ${Math.round(timeoutMs / 1000)}s. ` +
-                    `La red puede estar bloqueando YouTube. Configura YOUTUBE_PROXY en el .env y reinicia.`
-                ));
-            }
-        }, timeoutMs);
 
         proc.stdout.on('data', data => { stdout += data.toString(); });
         proc.stderr.on('data', data => { stderr += data.toString(); });
 
         proc.on('close', code => {
-            clearTimeout(timer);
-            if (killed) return;
             if (code === 0) {
                 resolve({ stdout, stderr });
             } else {
-                reject(new Error(`El proceso fallo con codigo ${code}: ${stderr || stdout}`));
+                reject(new Error(`El proceso falló con código ${code}: ${stderr || stdout}`));
             }
         });
 
         proc.on('error', err => {
-            clearTimeout(timer);
             reject(err);
         });
     });
@@ -197,7 +170,6 @@ function resolveCookiesPath() {
 function buildBaseYtDlpArgs(clientStrategy, extraArgs = []) {
     const args = [
         '--no-check-certificates',
-        '--socket-timeout', '15',
         '--js-runtimes', 'node'
     ];
 
@@ -210,12 +182,9 @@ function buildBaseYtDlpArgs(clientStrategy, extraArgs = []) {
         args.push('--cookies', cookiesPath);
     }
 
-    // Proxy: usar getConfiguredProxy() centralizado para yt-dlp
-    // [v1.9.0] Soporta YOUTUBE_PROXY, HTTP_PROXY y HTTPS_PROXY con log de diagnóstico
-    const proxy = getConfiguredProxy();
-    if (proxy) {
-        args.push('--proxy', proxy);
-        console.log('[yt-dlp] Usando proxy configurado:', proxy.replace(/:[^:@]*@/, ':***@'));
+    const proxy = process.env.YOUTUBE_PROXY || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+    if (proxy && proxy.trim()) {
+        args.push('--proxy', proxy.trim());
     }
 
     return args.concat(extraArgs);
@@ -242,197 +211,6 @@ function formatYtDlpError(rawError) {
  * Endpoint: POST /api/youtube-search
  * Busca canciones en YouTube devolviendo una lista amplia (hasta 50 resultados)
  */
-// ══════════════════════════════════════════════════════════════════════
-// ENDPOINTS DE STREAMING Y PROXY DE YOUTUBE [v1.9.0]
-// Permite reproducir audio y previsualizar YouTube a través del servidor
-// utilizando las MISMAS cookies y proxy que se usan para descargar.
-// Resuelve bloqueos en redes restringidas corporativas donde youtube.com está bloqueado.
-// ══════════════════════════════════════════════════════════════════════
-
-/**
- * Endpoint: GET /api/yt-stream?videoId=XXXX
- * Hace streaming directo de audio en tiempo real a través del servidor Node.js
- * utilizando yt-dlp con las cookies y proxy configurados.
- * El navegador del cliente solo se conecta a localhost:3000, evitando los bloqueos de red.
- */
-app.get('/api/yt-stream', (req, res) => {
-    const { videoId } = req.query;
-    if (!videoId || !/^[a-zA-Z0-9_-]{5,20}$/.test(videoId)) {
-        return res.status(400).send('Video ID inválido.');
-    }
-
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    console.log(`[yt-stream] Iniciando streaming proxy para video: ${videoId}`);
-
-    // Argumentos de yt-dlp para extraer audio y enviarlo a stdout (-o -)
-    const ytdlArgs = buildBaseYtDlpArgs('youtube:player_client=android_vr,visionos', [
-        '-f', 'ba/b',
-        '-o', '-',
-        '--no-playlist',
-        '--quiet',
-        '--no-warnings',
-        videoUrl
-    ]);
-
-    // Cabeceras HTTP para streaming de audio sin buffer
-    res.setHeader('Content-Type', 'audio/webm');
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.setHeader('X-Accel-Buffering', 'no'); // Anti-buffering en proxies Nginx/Render
-
-    const ytdlProcess = spawn(YTDLP_BIN, ytdlArgs, { windowsHide: true });
-
-    // Pipe de datos directo de yt-dlp al cliente HTTP
-    ytdlProcess.stdout.pipe(res);
-
-    ytdlProcess.stderr.on('data', (errData) => {
-        const msg = errData.toString();
-        // Solo loguear errores reales, no avisos informativos
-        if (msg.includes('ERROR:')) {
-            console.warn(`[yt-stream] Aviso de proceso: ${msg.trim()}`);
-        }
-    });
-
-    // Si el usuario cierra el reproductor o desconecta la pestaña, matar el proceso de inmediato
-    req.on('close', () => {
-        try {
-            ytdlProcess.kill('SIGTERM');
-        } catch (e) {}
-    });
-
-    ytdlProcess.on('error', (err) => {
-        console.error('[yt-stream] Error en proceso de streaming:', err.message);
-        if (!res.headersSent) {
-            res.status(500).send('Error iniciando stream de audio.');
-        }
-    });
-});
-
-/**
- * Endpoint: GET /api/yt-proxy?videoId=XXXX
- * Página de previsualización con reproductor dual:
- * 1) Stream nativo por servidor local (utilizando proxy y cookies de YouTube)
- * 2) Embed oficial de YouTube (si el cliente tiene acceso o prefiere ver el video)
- */
-app.get('/api/yt-proxy', (req, res) => {
-    const { videoId } = req.query;
-    if (!videoId || !/^[a-zA-Z0-9_-]{5,20}$/.test(videoId)) {
-        return res.status(400).send('Video ID inválido.');
-    }
-
-    const streamUrl = `/api/yt-stream?videoId=${videoId}`;
-    const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&rel=0`;
-
-    const html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Previsualización de YouTube (Proxy)</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%; height: 100%;
-      background: #0f172a;
-      color: #f1f5f9;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      overflow: hidden;
-    }
-    .player-card {
-      width: 100%; height: 100%;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      position: relative;
-    }
-    .stream-player {
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 12px; width: 90%; max-width: 480px;
-      padding: 16px; background: rgba(30, 41, 59, 0.8);
-      border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    }
-    .stream-title {
-      font-size: 13px; font-weight: 600; color: #38bdf8;
-      display: flex; align-items: center; gap: 6px;
-    }
-    audio { width: 100%; height: 40px; outline: none; }
-    .toggle-bar {
-      margin-top: 6px; display: flex; gap: 8px; font-size: 11px;
-    }
-    .btn-toggle {
-      background: #334155; color: #cbd5e1; border: 1px solid rgba(255, 255, 255, 0.15);
-      padding: 4px 10px; border-radius: 6px; cursor: pointer; transition: all 0.2s;
-    }
-    .btn-toggle:hover { background: #475569; color: #fff; }
-    .btn-toggle.active { background: #0284c7; color: #fff; }
-    iframe {
-      width: 100%; height: 100%; border: none; display: none;
-    }
-    .active-frame { display: block !important; }
-  </style>
-</head>
-<body>
-  <div class="player-card">
-    <!-- Reproductor nativo por proxy (funciona en redes restringidas) -->
-    <div class="stream-player" id="streamPlayerBox">
-      <div class="stream-title">
-        <span>🔒 Audio por Proxy Seguro (Red Restringida)</span>
-      </div>
-      <audio id="audioStreamEl" controls autoplay preload="auto" src="${streamUrl}"></audio>
-      <div class="toggle-bar">
-        <button type="button" class="btn-toggle active" id="btnModeProxy">🎧 Audio Proxy</button>
-        <button type="button" class="btn-toggle" id="btnModeEmbed">📺 Video Original</button>
-      </div>
-    </div>
-
-    <!-- Iframe oficial de YouTube -->
-    <iframe
-      id="ytIframeEl"
-      src=""
-      data-src="${embedUrl}"
-      allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-      allowfullscreen
-      title="YouTube Video">
-    </iframe>
-  </div>
-
-  <script>
-    const streamBox = document.getElementById('streamPlayerBox');
-    const audioEl = document.getElementById('audioStreamEl');
-    const iframeEl = document.getElementById('ytIframeEl');
-    const btnProxy = document.getElementById('btnModeProxy');
-    const btnEmbed = document.getElementById('btnModeEmbed');
-
-    btnProxy.onclick = () => {
-      btnProxy.classList.add('active');
-      btnEmbed.classList.remove('active');
-      iframeEl.classList.remove('active-frame');
-      iframeEl.src = '';
-      streamBox.style.display = 'flex';
-      audioEl.play().catch(() => {});
-    };
-
-    btnEmbed.onclick = () => {
-      btnEmbed.classList.add('active');
-      btnProxy.classList.remove('active');
-      audioEl.pause();
-      streamBox.style.display = 'none';
-      iframeEl.src = iframeEl.dataset.src;
-      iframeEl.classList.add('active-frame');
-    };
-  </script>
-</body>
-</html>`;
-
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-    res.send(html);
-});
-
 app.post('/api/youtube-search', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const { query, limit = 20 } = req.body;
@@ -460,7 +238,7 @@ app.post('/api/youtube-search', async (req, res) => {
                 '--flat-playlist'
             ]);
 
-            const { stdout } = await runProcess(YTDLP_BIN, args, 25000); // [v1.9.0] Timeout 25s anti-504
+            const { stdout } = await runProcess(YTDLP_BIN, args);
             const data = JSON.parse(stdout);
             const entries = data.entries || [];
 
@@ -506,16 +284,18 @@ app.post('/api/playlist-info', async (req, res) => {
     }
 
     try {
-        // [v1.9.0] buildBaseYtDlpArgs asegura soporte de cookies y proxy en playlists
-        const args = buildBaseYtDlpArgs('youtube:player_client=android,web', [
+        const args = [
+            '--no-check-certificates',
+            '--js-runtimes', 'node',
+            '--extractor-args', 'youtube:player_client=android,web',
             '--dump-single-json',
             '--no-warnings',
             '--flat-playlist',
             '--skip-download',
             url.trim()
-        ]);
+        ];
 
-        const { stdout } = await runProcess(YTDLP_BIN, args, 35000); // [v1.9.0] Timeout 35s anti-504
+        const { stdout } = await runProcess(YTDLP_BIN, args);
         const data = JSON.parse(stdout);
 
         const isPlaylist = Array.isArray(data.entries) && data.entries.length > 0;
@@ -583,7 +363,7 @@ app.post('/api/video-info', async (req, res) => {
                 url.trim()
             ]);
 
-            const { stdout } = await runProcess(YTDLP_BIN, args, 20000); // [v1.9.0] Timeout 20s anti-504
+            const { stdout } = await runProcess(YTDLP_BIN, args);
             const data = JSON.parse(stdout);
 
             return res.json({
@@ -655,7 +435,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
                     url.trim()
                 ]);
 
-                await runProcess(YTDLP_BIN, ytdlArgs, 120000); // [v1.9.0] Timeout 120s para conversión completa
+                await runProcess(YTDLP_BIN, ytdlArgs);
 
                 if (fs.existsSync(expectedMp3Path)) {
                     downloadSuccess = true;
@@ -813,7 +593,7 @@ app.use((req, res) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
     const cookiesResolved = resolveCookiesPath();
     console.log(`=======================================================`);
-    console.log(` Servidor Conversor de YouTube a MP3 v1.9.0 activo:`);
+    console.log(` Servidor Conversor de YouTube a MP3 v1.8.7 activo:`);
     console.log(` Local:      http://localhost:${PORT}`);
     console.log(` Plataforma activa: ${process.platform} (${process.arch})`);
     console.log(` yt-dlp:     ${YTDLP_BIN}`);
