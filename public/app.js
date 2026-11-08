@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.8.5
+ * Versión: 1.9.1
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
  *              - Resaltado visual interactivo y badge animado en la canción de YouTube en reproducción
  *              - Tarjeta inline inamovible de comparación de duplicados
@@ -19,7 +19,7 @@ let currentAccessToken = null;
 let currentUsername = null;
 let cachedUsernames = null;
 let myTracksCache = [];
-let collapsedAlbums = new Set();
+const albumExpandState = new Map();
 let currentLoadedVideoId = null;
 let currentPlayingVideoId = null;
 const bypassedSimilarityTitles = new Set();
@@ -53,7 +53,7 @@ async function safeFetchJson(url, options = {}, timeoutMs = 180000) {
     } else {
         const text = await res.text();
         if (!res.ok) {
-            throw new Error(`El servidor devolvió error ${res.status}. Reinicia el servidor en la terminal con "npm start" para aplicar los cambios.`);
+            throw new Error(res.status === 504 ? 'El proxy intermediario agotó el tiempo de espera (Error 504 Gateway Timeout). El servidor en segundo plano sigue procesando.' : `El servidor devolvió error ${res.status}.`);
         }
         try {
             return JSON.parse(text);
@@ -1117,6 +1117,63 @@ function showSimilarityInlineCard(newTitle, newAlbum, existingTrack, onConfirm) 
 // 7. PIPELINE DE CONVERSIÓN Y SUBIDA (INDIVIDUAL O PLAYLIST)
 // ══════════════════════════════════════════════════════════════════════
 
+
+/**
+ * Sondeo automático ante corte de proxy o timeout (504 Gateway Timeout):
+ * Verifica si la canción termina de procesarse en segundo plano en Supabase y actualiza la lista.
+ */
+async function pollForBackgroundUpload(customTitle, startTimeIso, maxWaitSeconds = 90) {
+    const cleanExpected = (customTitle || '').trim().toLowerCase();
+    const intervalMs = 4000;
+    const maxAttempts = Math.ceil((maxWaitSeconds * 1000) / intervalMs);
+
+    logEvent('⏳ El proxy cortó la respuesta (504 Timeout), pero el servidor en Render sigue convirtiendo y subiendo tu canción...', 'warn');
+    logEvent('🔍 Verificando automáticamente en tu perfil si la pista termina de procesarse...', 'info');
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        await new Promise(r => setTimeout(r, intervalMs));
+        const btn = $('btnConvertAndUpload');
+        if (btn) {
+            $('convertBtnText').textContent = `Esperando al servidor... (${attempt * 4}s)`;
+        }
+
+        try {
+            const { data: newTracks, error } = await supabaseClient
+                .from('music_tracks')
+                .select('*')
+                .eq('user_id', currentUserId)
+                .is('deleted_at', null)
+                .gte('created_at', startTimeIso)
+                .order('created_at', { ascending: false });
+
+            if (!error && Array.isArray(newTracks) && newTracks.length > 0) {
+                const match = newTracks.find(t => 
+                    (t.display_name && t.display_name.trim().toLowerCase() === cleanExpected) ||
+                    (cleanExpected && t.display_name && t.display_name.trim().toLowerCase().includes(cleanExpected))
+                ) || newTracks[0];
+
+                if (match) {
+                    logEvent(`✔ ¡Canción "${match.display_name}" detectada y guardada con éxito en tu perfil!`, 'success');
+                    $('youtubeUrlInput').value = '';
+                    $('customTitleInput').value = '';
+                    $('videoPreviewBox').classList.add('hide');
+                    currentLoadedVideoId = null;
+
+                    await loadAlbumsDataList();
+                    await loadUploadedTracks();
+                    return { success: true, message: `Pista "${match.display_name}" subida exitosamente.` };
+                }
+            }
+        } catch (pollErr) {
+            // Silencioso para continuar intentando
+        }
+    }
+
+    // Si terminó el tiempo de espera, refrescamos la lista de todos modos
+    await loadUploadedTracks();
+    throw new Error('El proceso tardó más de 90 segundos. Se actualizó la lista por si la canción terminó de guardarse.');
+}
+
 async function executeUpload(url, customTitle, album) {
     const btn = $('btnConvertAndUpload');
 
@@ -1151,29 +1208,49 @@ async function executeUpload(url, customTitle, album) {
         logEvent(`Iniciando procesamiento de "${customTitle}"...`, 'info');
         logEvent(`Descargando audio de YouTube y transcodificando a MP3 de alta fidelidad...`, 'info');
 
-        const result = await safeFetchJson('/api/convert-and-upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                url,
-                album: album || null,
-                customTitle,
-                accessToken: token,
-                userId: currentUserId
-            })
-        }, 180000);
+        const startTimeIso = new Date(Date.now() - 15000).toISOString();
 
-        logEvent(`✔ ${result.message}`, 'success');
+        let result = null;
+        try {
+            result = await safeFetchJson('/api/convert-and-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url,
+                    album: album || null,
+                    customTitle,
+                    accessToken: token,
+                    userId: currentUserId
+                })
+            }, 180000);
 
-        $('youtubeUrlInput').value = '';
-        $('customTitleInput').value = '';
-        $('videoPreviewBox').classList.add('hide');
-        currentLoadedVideoId = null;
+            logEvent(`✔ ${result.message}`, 'success');
 
-        await loadAlbumsDataList();
-        await loadUploadedTracks();
+            $('youtubeUrlInput').value = '';
+            $('customTitleInput').value = '';
+            $('videoPreviewBox').classList.add('hide');
+            currentLoadedVideoId = null;
 
-        return result;
+            await loadAlbumsDataList();
+            await loadUploadedTracks();
+
+            return result;
+
+        } catch (fetchErr) {
+            const msg = fetchErr.message || '';
+            const isTimeoutOrProxy = msg.includes('504') || 
+                                     msg.includes('tardó demasiado') || 
+                                     msg.includes('No se pudo comunicar') || 
+                                     msg.includes('AbortError') ||
+                                     msg.includes('Failed to fetch') ||
+                                     msg.includes('NetworkError');
+
+            if (isTimeoutOrProxy) {
+                return await pollForBackgroundUpload(customTitle, startTimeIso, 90);
+            } else {
+                throw fetchErr;
+            }
+        }
 
     } catch (err) {
         logEvent(`✘ Error en el proceso: ${err.message}`, 'error');
@@ -1375,7 +1452,7 @@ function renderAlbumsView() {
     sortedKeys.forEach(albumKey => {
         const groupTracks = groups.get(albumKey);
         const isNoAlbum = albumKey === NO_ALBUM_KEY;
-        const isCollapsed = collapsedAlbums.has(albumKey);
+        const isCollapsed = albumExpandState.has(albumKey) ? !albumExpandState.get(albumKey) : !isNoAlbum;
 
         const groupDiv = document.createElement('div');
         groupDiv.className = 'album-group';
@@ -1399,13 +1476,13 @@ function renderAlbumsView() {
         if (isCollapsed) tracksContainer.classList.add('hide');
 
         header.onclick = () => {
-            if (collapsedAlbums.has(albumKey)) {
-                collapsedAlbums.delete(albumKey);
-                arrow.textContent = '▾';
+            const currentlyCollapsed = tracksContainer.classList.contains('hide');
+            const willBeExpanded = currentlyCollapsed;
+            albumExpandState.set(albumKey, willBeExpanded);
+            arrow.textContent = willBeExpanded ? '▾' : '▸';
+            if (willBeExpanded) {
                 tracksContainer.classList.remove('hide');
             } else {
-                collapsedAlbums.add(albumKey);
-                arrow.textContent = '▸';
                 tracksContainer.classList.add('hide');
             }
         };
@@ -1504,13 +1581,18 @@ function renderAlbumsView() {
 }
 
 $('btnExpandAllAlbums').onclick = () => {
-    collapsedAlbums.clear();
+    myTracksCache.forEach(t => {
+        const k = (t.album && t.album.trim()) ? t.album.trim() : '__sin_album__';
+        albumExpandState.set(k, true);
+    });
     renderAlbumsView();
 };
 
 $('btnCollapseAllAlbums').onclick = () => {
-    const keys = new Set(myTracksCache.map(t => (t.album && t.album.trim()) ? t.album.trim() : '__sin_album__'));
-    collapsedAlbums = keys;
+    myTracksCache.forEach(t => {
+        const k = (t.album && t.album.trim()) ? t.album.trim() : '__sin_album__';
+        albumExpandState.set(k, false);
+    });
     renderAlbumsView();
 };
 
