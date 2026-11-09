@@ -763,35 +763,76 @@ function extractArtistAndTrackTitle(rawTitle, uploader = '') {
  * Muestra el PANEL LATERAL inamovible en el DOM para confirmar álbum/banda.
  * El panel #albumPromptSidePanel está siempre en el DOM junto a #searchResultsGrid.
  * Reemplaza el antiguo modal flotante que se cerraba solo. [v1.9.4]
+ * v1.9.5: Ahora carga y muestra los álbumes existentes del usuario en un select.
  *
  * @param {string} suggestedArtist - Nombre de banda/artista detectado automáticamente
  * @param {string} [songTitle]     - Título de la canción (para mostrar en el panel)
  * @returns {Promise<string|null>}  Nombre del álbum, null = sin álbum, '__CANCELLED__' = cancelado
  */
-function promptAlbumConfirmation(suggestedArtist, songTitle = '') {
-    return new Promise((resolve) => {
-        const panel      = $('albumPromptSidePanel');
-        const artistText = $('promptArtistNameText');
-        const songText   = $('promptSongNameText');
-        const albumInput = $('promptAlbumInput');
-        const btnConfirm = $('btnPromptConfirmAlbum');
-        const btnNoAlbum = $('btnPromptNoAlbum');
-        const btnClose   = $('btnCloseAlbumSidePanel');
+async function promptAlbumConfirmation(suggestedArtist, songTitle = '') {
+    const panel      = $('albumPromptSidePanel');
+    const artistText = $('promptArtistNameText');
+    const songText   = $('promptSongNameText');
+    const albumInput = $('promptAlbumInput');
+    const btnConfirm = $('btnPromptConfirmAlbum');
+    const btnNoAlbum = $('btnPromptNoAlbum');
+    const btnClose   = $('btnCloseAlbumSidePanel');
 
-        // Si el panel no existe (DOM no cargado) o no hay artista sugerido, resuelve inmediatamente
-        if (!panel || !suggestedArtist) {
-            resolve($('albumInput')?.value?.trim() || null);
-            return;
+    // Si el panel no existe (DOM no cargado) o no hay artista sugerido, resuelve inmediatamente
+    if (!panel || !suggestedArtist) {
+        return $('albumInput')?.value?.trim() || null;
+    }
+
+    // Llenar información en el panel
+    if (artistText) artistText.textContent = suggestedArtist;
+    if (songText)   songText.textContent   = songTitle || '';
+    if (albumInput) albumInput.value        = suggestedArtist;
+
+    // Cargar álbumes existentes en el select del panel lateral [v1.9.5]
+    const existingSelect = $('promptExistingAlbumSelect');
+    if (existingSelect) {
+        existingSelect.innerHTML = '<option value="">── Nuevo álbum ──</option>';
+        try {
+            const { data: albumRows } = await supabaseClient
+                .from('music_tracks')
+                .select('album')
+                .eq('user_id', currentUserId)
+                .not('album', 'is', null);
+
+            const uniqueAlbums = [...new Set((albumRows || []).map(r => r.album))].sort();
+
+            uniqueAlbums.forEach(alb => {
+                const opt = document.createElement('option');
+                opt.value = alb;
+                opt.textContent = alb;
+                // Pre-seleccionar si coincide con el artista sugerido
+                if (alb.toLowerCase() === suggestedArtist.toLowerCase()) opt.selected = true;
+                existingSelect.appendChild(opt);
+            });
+
+            // Si encontramos coincidencia exacta, actualizar el input también
+            if (existingSelect.value) albumInput.value = existingSelect.value;
+
+        } catch (e) {
+            console.warn('No se pudieron cargar álbumes existentes:', e);
         }
 
-        // Llenar información en el panel
-        if (artistText) artistText.textContent = suggestedArtist;
-        if (songText)   songText.textContent   = songTitle || '';
-        if (albumInput) albumInput.value        = suggestedArtist;
+        // Sincronizar select → input al elegir un álbum existente
+        existingSelect.onchange = () => {
+            if (existingSelect.value) {
+                albumInput.value = existingSelect.value;
+            } else {
+                // "Nuevo álbum" seleccionado: restaurar el sugerido
+                albumInput.value = suggestedArtist;
+            }
+        };
+    }
 
-        // Mostrar el panel (position: fixed, no necesita scrollIntoView) [v1.9.4b]
-        panel.classList.remove('hide');
+    // Mostrar el panel (position: fixed) [v1.9.4b]
+    panel.classList.remove('hide');
 
+    // Esperar la decisión del usuario mediante una Promesa
+    return new Promise((resolve) => {
         let isResolved = false;
 
         // Limpieza y resolución de la promesa
@@ -806,6 +847,8 @@ function promptAlbumConfirmation(suggestedArtist, songTitle = '') {
             if (btnConfirm) btnConfirm.onclick = null;
             if (btnNoAlbum) btnNoAlbum.onclick = null;
             if (btnClose)   btnClose.onclick   = null;
+            const sel = $('promptExistingAlbumSelect');
+            if (sel) sel.onchange = null;
             window.removeEventListener('keydown', onEscKey);
 
             resolve(val);

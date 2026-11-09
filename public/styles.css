@@ -1447,3 +1447,51 @@ button:disabled {
     from { opacity: 0; transform: translateX(-50%) translateY(40px); }
     to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
+
+/* ─── Select de álbumes existentes en el panel lateral [v1.9.5] ─── */
+.album-side-select {
+    width: 100%;
+    padding: 8px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: rgba(0, 0, 0, 0.3);
+    color: #fff;
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%239ca3af' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+}
+
+.album-side-select:focus {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.18);
+}
+
+.album-side-select option {
+    background: #0f1623;
+    color: #fff;
+}
+
+/* Separador visual entre select y el input manual */
+.album-side-or-divider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    margin: -4px 0;
+}
+
+.album-side-or-divider::before,
+.album-side-or-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-color);
+}

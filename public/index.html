@@ -397,7 +397,14 @@
                 <div class="album-side-song" id="promptSongNameText">Título</div>
             </div>
             <div class="album-side-field">
-                <label for="promptAlbumInput">Nombre de la banda o álbum:</label>
+                <label for="promptExistingAlbumSelect">Álbumes existentes:</label>
+                <select id="promptExistingAlbumSelect" class="album-side-select">
+                    <option value="">-- Nuevo álbum --</option>
+                </select>
+            </div>
+
+            <div class="album-side-field">
+                <label for="promptAlbumInput">O escribe un nombre nuevo:</label>
                 <input id="promptAlbumInput" type="text" placeholder="Ej. Guns N' Roses">
             </div>
             <div class="album-side-buttons">
