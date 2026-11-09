@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor YouTube a MP3 - Supabase Chat v1.9.6</title>
+    <title>Conversor YouTube a MP3 - Supabase Chat v1.9.7</title>
     <!-- Estilos de la aplicación v1.9.4 con cache-busting -->
-    <link rel="stylesheet" href="styles.css?v=1.9.6">
+    <link rel="stylesheet" href="styles.css?v=1.9.7">
 </head>
 <body>
     <div class="container">
@@ -154,62 +154,6 @@
                     <small style="color: var(--text-muted); font-size: 0.78rem; margin-top: 0.2rem;">
                         Si escribes un álbum que no existe, se creará automáticamente en tu perfil.
                     </small>
-                </div>
-
-                <!-- Tarjeta Inline Inamovible de Canción Similar (Sin bugs de modales flotantes) -->
-                <div id="similarityInlineCard" class="hide" style="background: #181b22; border: 2px solid #fbbf24; border-radius: 14px; padding: 1.2rem; margin-top: 1rem; margin-bottom: 1rem; box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem;">
-                        <div style="display: flex; align-items: center; gap: 8px; color: #fbbf24; font-weight: 700; font-size: 1.05rem;">
-                            <span>⚠️</span>
-                            <span>Canción con Nombre Similar Detectada en tu Perfil</span>
-                        </div>
-                        <button id="btnInlineClose" type="button" style="background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; padding: 0 4px;" title="Cerrar aviso">✕</button>
-                    </div>
-
-                    <p style="font-size: 0.88rem; color: #cbd5e1; margin-bottom: 0.8rem;">
-                        Ya tienes una canción parecida registrada. Compara ambas y decide si deseas continuar:
-                    </p>
-
-                    <div class="comparison-table" id="inlineCompareTable" style="margin-bottom: 0.8rem;">
-                        <!-- Nueva -->
-                        <div class="compare-row new">
-                            <div class="compare-badge">Canción que vas a subir</div>
-                            <div style="font-weight: 600; color: #fff;" id="inlineNewTitle"></div>
-                            <div style="font-size: 0.8rem; color: var(--text-muted);">
-                                Álbum destino: <span id="inlineNewAlbum" style="color: var(--primary);"></span>
-                            </div>
-                        </div>
-
-                        <!-- Existente -->
-                        <div class="compare-row existing">
-                            <div class="compare-badge">Ya existente en tu perfil</div>
-                            <div style="font-weight: 600; color: #fff;" id="inlineExistingTitle"></div>
-                            <div style="font-size: 0.8rem; color: var(--text-muted);">
-                                Álbum actual: <span id="inlineExistingAlbum" style="color: var(--warning);"></span>
-                            </div>
-                            <div id="inlineAudioCompareWrap" style="margin-top: 6px;"></div>
-                        </div>
-                    </div>
-
-                    <!-- Renombrado in-situ -->
-                    <div id="inlineRenameSection" class="hide" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; margin-bottom: 0.8rem;">
-                        <label for="inlineRenameInput" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-bottom: 4px;">
-                            Escribe un nuevo nombre para diferenciarla:
-                        </label>
-                        <input id="inlineRenameInput" type="text" style="width: 100%; padding: 0.5rem 0.8rem; font-size: 0.88rem;" placeholder="Nuevo nombre de la canción">
-                    </div>
-
-                    <!-- Estado de carga in-situ -->
-                    <div id="inlineLoadingState" class="hide" style="text-align: center; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: 8px; margin-bottom: 0.8rem;">
-                        <div style="font-size: 1.8rem; animation: pulse 1.5s infinite;">⏳</div>
-                        <div id="inlineLoadingText" style="font-weight: 600; color: var(--primary); margin-top: 4px;">Descargando y subiendo...</div>
-                    </div>
-
-                    <div style="display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;" id="inlineActionsRow">
-                        <button id="btnInlineCancel" class="btn-secondary" type="button" style="padding: 0.6rem 1rem;">Cancelar</button>
-                        <button id="btnInlineRename" class="btn-secondary" type="button" style="padding: 0.6rem 1rem;">Cambiar Nombre</button>
-                        <button id="btnInlineUploadAnyway" class="btn-primary" type="button" style="width: auto; padding: 0.6rem 1.2rem;">Subir de todos modos</button>
-                    </div>
                 </div>
 
                 <!-- Botón de Conversión y Subida con Restablecimiento de Emergencia -->
@@ -421,13 +365,67 @@
         </div>
     </aside>
 
+    <!-- Panel Lateral de Duplicados: POSICIÓN FIJA a la derecha (Recuadro rojo) [v1.9.7] -->
+    <aside id="similarityInlineCard" class="similarity-side-panel hide">
+        <div class="similarity-side-header">
+            <div class="similarity-side-title">
+                <span>⚠️</span>
+                <span>Canción Similar Detectada</span>
+            </div>
+            <button id="btnInlineClose" class="btn-side-close" type="button" title="Cerrar aviso">✕</button>
+        </div>
+        <div class="similarity-side-body">
+            <p style="font-size: 0.8rem; color: #cbd5e1; line-height: 1.35; margin-bottom: 6px;">
+                Ya tienes una canción parecida en tu perfil. Compara ambas antes de continuar:
+            </p>
+
+            <div class="compare-row new" style="margin-bottom: 6px;">
+                <div class="compare-badge">Canción que vas a subir:</div>
+                <div style="font-weight: 700; color: #fff; font-size: 0.88rem;" id="inlineNewTitle"></div>
+                <div style="font-size: 0.74rem; color: var(--text-muted);">
+                    Álbum: <span id="inlineNewAlbum" style="color: var(--primary);"></span>
+                </div>
+            </div>
+
+            <div class="compare-row existing" style="margin-bottom: 8px;">
+                <div class="compare-badge">Ya en tu perfil:</div>
+                <div style="font-weight: 700; color: #fff; font-size: 0.88rem;" id="inlineExistingTitle"></div>
+                <div style="font-size: 0.74rem; color: var(--text-muted);">
+                    Álbum: <span id="inlineExistingAlbum" style="color: var(--warning);"></span>
+                </div>
+                <div id="inlineAudioCompareWrap" style="margin-top: 5px;"></div>
+            </div>
+
+            <!-- Renombrado in-situ -->
+            <div id="inlineRenameSection" class="hide" style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px; margin-bottom: 8px;">
+                <label for="inlineRenameInput" style="font-size: 0.74rem; color: var(--text-muted); display: block; margin-bottom: 3px;">
+                    Nuevo nombre para diferenciarla:
+                </label>
+                <input id="inlineRenameInput" type="text" style="width: 100%; padding: 6px 10px; font-size: 0.84rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff;" placeholder="Nuevo nombre de la canción">
+            </div>
+
+            <div class="similarity-side-buttons">
+                <button id="btnInlineUploadAnyway" class="btn-primary album-btn-action" type="button" style="background: #eab308; color: #000; font-weight: 700;">
+                    ⚡ Subir de todos modos
+                </button>
+                <button id="btnInlineRename" class="btn-secondary album-btn-action" type="button">
+                    ✏️ Cambiar Nombre
+                </button>
+                <button id="btnInlineCancel" class="btn-secondary album-btn-action" type="button" style="opacity: 0.75;">
+                    ✕ Cancelar
+                </button>
+            </div>
+        </div>
+    </aside>
+
+
 
     <!-- Scripts de Supabase y Utilidades Compartidas del Chat con cache-busting v1.9.4 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="/js/config.js?v=1.9.6"></script>
     <script src="/js/media-api.js?v=1.9.6"></script>
     <script src="/js/auth.js?v=1.9.6"></script>
-    <script src="app.js?v=1.9.6"></script>
+    <script src="app.js?v=1.9.7"></script>
 
 </body>
 </html>

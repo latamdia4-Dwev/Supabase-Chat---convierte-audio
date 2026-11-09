@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.9.6
+ * Versión: 1.9.7
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
  *              - Resaltado visual interactivo y badge animado en la canción de YouTube en reproducción
  *              - Tarjeta inline inamovible de comparación de duplicados
@@ -886,6 +886,58 @@ async function promptAlbumConfirmation(suggestedArtist, songTitle = '') {
     });
 }
 
+
+/**
+ * Procesa la selección o encolado de una pista validando duplicados en tu perfil [v1.9.7]
+ */
+async function processTrackSelection({ item, fullTitleClean, detectedBand }) {
+    closeSimilarityNotification();
+    closeAlbumPrompt();
+
+    // 1. Asegurar caché de pistas cargada si está vacía
+    if ((!myTracksCache || myTracksCache.length === 0) && currentUserId) {
+        try { await loadUploadedTracks(); } catch (e) {}
+    }
+
+    // 2. Comprobar si ya existe una pista similar o duplicada en el perfil
+    const match = findSimilarTrack(fullTitleClean);
+    if (match) {
+        logEvent(`⚠️ Canción duplicada/similar detectada: "${match.track.display_name}"`, 'warn');
+        showSimilarityInlineCard(fullTitleClean, $('albumInput')?.value?.trim() || detectedBand, match.track, async (finalTitle) => {
+            // Usuario confirmó subir de todos modos o con nombre cambiado
+            closeSimilarityNotification();
+            await proceedToQueueWithAlbum(item, finalTitle, detectedBand);
+        });
+        return;
+    }
+
+    // 3. Si no hay duplicado, continuar directo hacia asignación de álbum y encolar
+    await proceedToQueueWithAlbum(item, fullTitleClean, detectedBand);
+}
+
+/**
+ * Continúa hacia la asignación de álbum en el panel lateral y agrega a la cola de descargas [v1.9.7]
+ */
+async function proceedToQueueWithAlbum(item, titleToUse, detectedBand) {
+    let chosenAlbum = $('albumInput')?.value?.trim() || null;
+
+    if (!chosenAlbum && detectedBand) {
+        const ans = await promptAlbumConfirmation(detectedBand, titleToUse);
+        if (ans === '__CANCELLED__') return;
+        chosenAlbum = ans;
+        if (chosenAlbum) $('albumInput').value = chosenAlbum;
+    }
+
+    addToDownloadQueue({
+        url: item.url,
+        title: titleToUse,
+        cleanTitle: titleToUse,
+        album: chosenAlbum,
+        thumbnail: item.thumbnail,
+        durationString: item.durationString
+    });
+}
+
 async function searchYouTube() {
     closeSimilarityNotification(); // [v1.9.2] Auto-cerrar duplicados al buscar
     const query = $('ytSearchInput').value.trim();
@@ -1275,24 +1327,10 @@ function closeSimilarityNotification() {
 
 function showSimilarityInlineCard(newTitle, newAlbum, existingTrack, onConfirm) {
     closeSimilarityNotification();
+    closeAlbumPrompt(); // Cierra el panel de álbum para no sobreponerse a la derecha
 
     const card = $('similarityInlineCard');
     if (!card) return;
-
-    // Reposicionamiento visible en el DOM [v1.9.6]
-    // Si la cuadrícula de búsqueda está activa, mover la tarjeta arriba de los resultados
-    const searchGrid = $('searchResultsGrid');
-    if (searchGrid && !searchGrid.classList.contains('hide')) {
-        searchGrid.parentNode.insertBefore(card, searchGrid);
-    } else {
-        const trackSec = $('trackConfigSection');
-        if (trackSec) {
-            const convertBtnWrap = $('btnConvertAndUpload')?.parentElement;
-            if (convertBtnWrap) {
-                trackSec.insertBefore(card, convertBtnWrap);
-            }
-        }
-    }
 
     $('inlineNewTitle').textContent = newTitle;
     $('inlineNewAlbum').textContent = newAlbum || 'Sin álbum';
@@ -1302,14 +1340,7 @@ function showSimilarityInlineCard(newTitle, newAlbum, existingTrack, onConfirm) 
 
     $('inlineRenameInput').value = newTitle;
     $('inlineRenameSection').classList.add('hide');
-    $('btnInlineRename').textContent = 'Cambiar Nombre';
-
-    const compareTable = $('inlineCompareTable');
-    if (compareTable) compareTable.classList.remove('hide');
-    const actionsRow = $('inlineActionsRow');
-    if (actionsRow) actionsRow.classList.remove('hide');
-    const loadingState = $('inlineLoadingState');
-    if (loadingState) loadingState.classList.add('hide');
+    $('btnInlineRename').textContent = '✏️ Cambiar Nombre';
 
     // Botón para reproducir la canción que ya existe
     const audioWrap = $('inlineAudioCompareWrap');
@@ -1318,7 +1349,7 @@ function showSimilarityInlineCard(newTitle, newAlbum, existingTrack, onConfirm) 
     playBtn.type = 'button';
     playBtn.className = 'btn-secondary';
     playBtn.style.padding = '4px 10px';
-    playBtn.style.fontSize = '0.8rem';
+    playBtn.style.fontSize = '0.78rem';
     playBtn.textContent = '▶ Escuchar la que ya tienes';
 
     playBtn.onclick = async (e) => {
@@ -1341,42 +1372,15 @@ function showSimilarityInlineCard(newTitle, newAlbum, existingTrack, onConfirm) 
     };
     audioWrap.appendChild(playBtn);
 
+    // Mostrar el panel de duplicados en la posición fija a la derecha [v1.9.7]
     card.classList.remove('hide');
-    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-    const triggerUpload = async (titleToUpload) => {
-        if (compareTable) compareTable.classList.add('hide');
-        if (actionsRow) actionsRow.classList.add('hide');
-        if (loadingState) loadingState.classList.remove('hide');
-        $('inlineLoadingText').textContent = 'Descargando audio de YouTube y transcodificando a MP3...';
-
-        try {
-            await onConfirm(titleToUpload);
-            closeSimilarityNotification();
-        } catch (uploadErr) {
-            if (actionsRow) actionsRow.classList.remove('hide');
-            const is500Mb = uploadErr.message && uploadErr.message.includes('500 MB');
-            if (is500Mb) {
-                $('inlineLoadingText').innerHTML = `
-                    <div style="color: #f87171; font-weight: 700; font-size: 0.95rem; margin-bottom: 4px;">
-                        ⚠️ Límite de 500 MB alcanzado en tu cuenta de Cloudflare
-                    </div>
-                    <div style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.4;">
-                        Elimina canciones viejas o repetidas de tu lista de abajo con el botón 🗑️ para liberar espacio y vuelve a presionar "Reintentar Subida".
-                    </div>
-                `;
-            } else {
-                $('inlineLoadingText').innerHTML = `<span style="color: var(--danger)">✘ ${uploadErr.message}</span>`;
-            }
-            $('btnInlineUploadAnyway').textContent = 'Reintentar Subida';
-        }
-    };
 
     // Botón Subir de todos modos
     $('btnInlineUploadAnyway').onclick = async (e) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
         bypassedSimilarityTitles.add(normalizeTitle(newTitle));
-        await triggerUpload(newTitle);
+        closeSimilarityNotification();
+        if (typeof onConfirm === 'function') await onConfirm(newTitle);
     };
 
     // Botón Cambiar Nombre
@@ -1385,14 +1389,14 @@ function showSimilarityInlineCard(newTitle, newAlbum, existingTrack, onConfirm) 
         const renameSec = $('inlineRenameSection');
         if (renameSec.classList.contains('hide')) {
             renameSec.classList.remove('hide');
-            $('btnInlineRename').textContent = 'Guardar y Subir';
+            $('btnInlineRename').textContent = '✔ Guardar y Continuar';
             $('inlineRenameInput').focus();
             $('inlineRenameInput').select();
         } else {
             const updated = $('inlineRenameInput').value.trim() || newTitle;
-            $('customTitleInput').value = updated;
             bypassedSimilarityTitles.add(normalizeTitle(updated));
-            await triggerUpload(updated);
+            closeSimilarityNotification();
+            if (typeof onConfirm === 'function') await onConfirm(updated);
         }
     };
 

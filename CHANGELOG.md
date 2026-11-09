@@ -4,6 +4,24 @@ Todas las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [v1.9.7] — 2026-11-08
+
+### 🎛️ Panel Lateral de Duplicados a la Derecha y Activación Operativa de Cola
+
+#### 1. Panel Lateral de Duplicados en Posición Fija a la Derecha
+- **Reubicación solicitada por el usuario**: La tarjeta de validación de duplicados (`#similarityInlineCard`) se extrajo del interior del contenedor principal y se transformó en un elemento flotante fijo (`.similarity-side-panel`) ubicado en el **margen derecho del viewport** (`left: calc(50% + 390px)`), exactamente en el mismo espacio donde aparece el panel de álbum (recuadro rojo).
+- **Diseño**: Borde ámbar (`#eab308`), cabecera con gradiente dorado (`#854d0e → #ca8a04`), visualización compacta de pista entrante vs pista registrada, botón para escuchar la pista existente, opción de renombrado in-situ y botones de acción.
+- **Responsivo**: En pantallas móviles ($le 900\text{px}$), se convierte suavemente en un bottom-sheet deslizable desde abajo.
+
+#### 2. Corrección Operativa de los Botones "+ Cola" y "⚡ Convertir"
+- **Causa resuelta**: Se definió formalmente `processTrackSelection()` y `proceedToQueueWithAlbum()` en el ámbito global antes de `searchYouTube()`, eliminando el `ReferenceError` que impedía que los clics en los botones de búsqueda realizaran cualquier acción.
+- **Flujo coordinado**:
+  1. Si se detecta una canción similar, salta el panel amarillo de duplicados a la derecha.
+  2. Si el usuario confirma o renombra, el panel amarillo se cierra y da paso al panel azul de álbum a la derecha (si la pista aún no tiene álbum asignado).
+  3. Tras confirmar el álbum (o elegir "Sin categoría"), la canción se encola en `addToDownloadQueue()` y se desminimiza la lista de la cola con tiempos estimados.
+
+---
+
 ## [v1.9.6] — 2026-11-08
 
 ### 🔍 Validación Proactiva de Duplicados en Búsqueda y Algoritmo de Similitud Mejorado

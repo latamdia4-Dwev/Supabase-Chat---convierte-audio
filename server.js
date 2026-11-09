@@ -593,7 +593,7 @@ app.use((req, res) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
     const cookiesResolved = resolveCookiesPath();
     console.log(`=======================================================`);
-    console.log(` Servidor Conversor de YouTube a MP3 v1.9.6 activo:`);
+    console.log(` Servidor Conversor de YouTube a MP3 v1.9.7 activo:`);
     console.log(` Local:      http://localhost:${PORT}`);
     console.log(` Plataforma activa: ${process.platform} (${process.arch})`);
     console.log(` yt-dlp:     ${YTDLP_BIN}`);
