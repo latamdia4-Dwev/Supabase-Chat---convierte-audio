@@ -919,13 +919,16 @@ async function processTrackSelection({ item, fullTitleClean, detectedBand }) {
  * Continúa hacia la asignación de álbum en el panel lateral y agrega a la cola de descargas [v1.9.7]
  */
 async function proceedToQueueWithAlbum(item, titleToUse, detectedBand) {
-    let chosenAlbum = $('albumInput')?.value?.trim() || null;
+    let chosenAlbum = null;
 
-    if (!chosenAlbum && detectedBand) {
+    // Si la pista tiene artista/banda detectada, siempre confirmamos con el usuario en el panel lateral [v1.9.10]
+    if (detectedBand) {
         const ans = await promptAlbumConfirmation(detectedBand, titleToUse);
         if (ans === '__CANCELLED__') return;
         chosenAlbum = ans;
-        if (chosenAlbum) $('albumInput').value = chosenAlbum;
+    } else {
+        // Si no hay banda detectada, usa lo que el usuario haya escrito manualmente en el campo
+        chosenAlbum = $('albumInput')?.value?.trim() || null;
     }
 
     addToDownloadQueue({
@@ -939,7 +942,10 @@ async function proceedToQueueWithAlbum(item, titleToUse, detectedBand) {
 }
 
 async function searchYouTube() {
-    closeSimilarityNotification(); // [v1.9.2] Auto-cerrar duplicados al buscar
+    closeSimilarityNotification();
+    // Limpiar album y titulo previo para que nueva busqueda empiece limpia [v1.9.10]
+    if ($('albumInput')) $('albumInput').value = '';
+    if ($('customTitleInput')) $('customTitleInput').value = ''; // [v1.9.2] Auto-cerrar duplicados al buscar
     const query = $('ytSearchInput').value.trim();
     if (!query) {
         logEvent('Escribe el nombre de una canción o artista para buscar.', 'warn');

@@ -4,6 +4,23 @@ Todas las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [v1.9.10] — 2026-11-08
+
+### 🚀 Rescate de Subida a R2, Bypass Universal de Certificados SSL y Pregunta de Álbum por Canción
+
+#### 1. Solución al Error de Subida a Cloudflare R2
+- **Causa**: Node 24 utiliza el cliente nativo HTTP `undici` para `fetch`, el cual no respeta los agentes `https.Agent({ rejectUnauthorized: false })` por defecto, provocando el fallo `UNABLE_TO_VERIFY_LEAF_SIGNATURE` al enviar peticiones multipart/binarias al Worker de Cloudflare R2 en redes Windows con certificados intermedios.
+- **Corrección**: Se activó `process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'` en el arranque del servidor Express, permitiendo la subida y comunicación cifrada fluida hacia R2 y Supabase sin rechazos de firma de certificado.
+- **Estrategias con Cookies**: Cuando se detectan cookies de sesión de YouTube, `server.js` prioriza automáticamente `mweb,web` y `web,mweb` para descargar y transcodificar al primer intento sin pasar por clientes sin soporte de cookies.
+
+#### 2. Confirmación Independiente de Álbum por Canción y Reseteo entre Búsquedas
+- **Causa**: Al confirmar un álbum para una canción, el valor quedaba guardado en `#albumInput` y la función `proceedToQueueWithAlbum` lo reutilizaba ciegamente para las siguientes canciones o búsquedas distintas, sin volver a abrir el panel selector.
+- **Corrección**:
+  - `proceedToQueueWithAlbum` ahora evalúa siempre la banda detectada de la canción actual (`detectedBand`) y abre el panel lateral en el recuadro rojo para que el usuario elija o confirme el álbum específico.
+  - Al ejecutar una nueva búsqueda en YouTube (`searchYouTube`), los campos de álbum y título previo se limpian automáticamente para garantizar que la nueva consulta empiece 100% limpia.
+
+---
+
 ## [v1.9.9] — 2026-11-08
 
 ### 🎯 Ubicación en Recuadro Rojo, Corrección de Botones de Cola/Conversión y Estabilidad Integral

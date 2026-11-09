@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.9.9
+ * Versión: 1.9.10
  * Descripción: Servidor Express optimizado y enfocado en YouTube:
  *              - Soporte de certificados SSL universales (--no-check-certificates)
  *              - Prevención de bloqueos por validación de certificado en Windows/Linux
@@ -28,6 +28,7 @@ const { spawn } = require('child_process');
 const https = require('https');
 
 // --- Fix SSL para fetch nativo en Node 24 con certificados intermedios en Windows ---
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const insecureAgent = new https.Agent({ rejectUnauthorized: false });
 
 /**
@@ -409,13 +410,22 @@ app.post('/api/convert-and-upload', async (req, res) => {
     const tempFileTemplate = path.join(TEMP_DIR, `${tempId}.%(ext)s`);
     const expectedMp3Path = path.join(TEMP_DIR, `${tempId}.mp3`);
 
-    const clientStrategies = [
-        'youtube:player_client=visionos,android_vr',
-        'youtube:player_client=android_vr,visionos',
-        'youtube:player_client=ios,android',
-        'youtube:player_client=android,web',
-        'youtube:player_client=mweb,web'
-    ];
+    const hasCookies = !!resolveCookiesPath();
+    const clientStrategies = hasCookies
+        ? [
+            'youtube:player_client=mweb,web',
+            'youtube:player_client=web,mweb',
+            'youtube:player_client=android,web',
+            'youtube:player_client=tv_embedded,web',
+            'youtube:player_client=visionos,android_vr'
+        ]
+        : [
+            'youtube:player_client=visionos,android_vr',
+            'youtube:player_client=android_vr,visionos',
+            'youtube:player_client=ios,android',
+            'youtube:player_client=android,web',
+            'youtube:player_client=mweb,web'
+        ];
 
     try {
         console.log(`[YouTube Convert] Iniciando pipeline de conversión para: ${url}`);
@@ -502,7 +512,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
 
         // 5. Si no existe previamente en R2, subir el MP3 a Cloudflare R2 Worker con reintentos
         if (!fileName) {
-            console.log(`[YouTube Convert] Subiendo nuevo archivo a Cloudflare R2 Worker...`);
+            console.log(`[YouTube Convert] Subiendo nuevo archivo a Cloudflare R2 Worker (${mp3Buffer.length} bytes)...`);
             let uploadRes = null;
             let uploadPayload = null;
 
@@ -598,7 +608,7 @@ app.use((req, res) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
     const cookiesResolved = resolveCookiesPath();
     console.log(`=======================================================`);
-    console.log(` Servidor Conversor de YouTube a MP3 v1.9.9 activo:`);
+    console.log(` Servidor Conversor de YouTube a MP3 v1.9.10 activo:`);
     console.log(` Local:      http://localhost:${PORT}`);
     console.log(` Plataforma activa: ${process.platform} (${process.arch})`);
     console.log(` yt-dlp:     ${YTDLP_BIN}`);
