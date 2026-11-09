@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.9.3
+ * Versión: 1.9.4
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
  *              - Resaltado visual interactivo y badge animado en la canción de YouTube en reproducción
  *              - Tarjeta inline inamovible de comparación de duplicados
@@ -760,63 +760,90 @@ function extractArtistAndTrackTitle(rawTitle, uploader = '') {
 }
 
 /**
- * Muestra el modal interactivo para confirmar si se desea asignar la canción
- * a la banda detectada, a otro álbum o dejarla sin categoría [v1.9.2]
+ * Muestra el PANEL LATERAL inamovible en el DOM para confirmar álbum/banda.
+ * El panel #albumPromptSidePanel está siempre en el DOM junto a #searchResultsGrid.
+ * Reemplaza el antiguo modal flotante que se cerraba solo. [v1.9.4]
+ *
+ * @param {string} suggestedArtist - Nombre de banda/artista detectado automáticamente
+ * @param {string} [songTitle]     - Título de la canción (para mostrar en el panel)
+ * @returns {Promise<string|null>}  Nombre del álbum, null = sin álbum, '__CANCELLED__' = cancelado
  */
-function promptAlbumConfirmation(suggestedArtist) {
+function promptAlbumConfirmation(suggestedArtist, songTitle = '') {
     return new Promise((resolve) => {
-        const modal = $('albumPromptModal');
+        const panel      = $('albumPromptSidePanel');
         const artistText = $('promptArtistNameText');
+        const songText   = $('promptSongNameText');
         const albumInput = $('promptAlbumInput');
         const btnConfirm = $('btnPromptConfirmAlbum');
         const btnNoAlbum = $('btnPromptNoAlbum');
-        const btnCancel = $('btnPromptCancel');
+        const btnClose   = $('btnCloseAlbumSidePanel');
 
-        if (!modal || !suggestedArtist) {
+        // Si el panel no existe (DOM no cargado) o no hay artista sugerido, resuelve inmediatamente
+        if (!panel || !suggestedArtist) {
             resolve($('albumInput')?.value?.trim() || null);
             return;
         }
 
-        artistText.textContent = suggestedArtist;
-        albumInput.value = suggestedArtist;
-        modal.classList.remove('hide');
+        // Llenar información en el panel
+        if (artistText) artistText.textContent = suggestedArtist;
+        if (songText)   songText.textContent   = songTitle || '';
+        if (albumInput) albumInput.value        = suggestedArtist;
+
+        // Mostrar el panel y la fila de búsqueda
+        panel.classList.remove('hide');
+        const layoutRow = $('searchLayoutRow');
+        if (layoutRow) layoutRow.classList.add('panel-active');
+
+        // Desplazar suavemente hasta el panel
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
         let isResolved = false;
 
+        // Limpieza y resolución de la promesa
         const cleanUp = (val) => {
             if (isResolved) return;
             isResolved = true;
-            modal.classList.add('hide');
-            btnConfirm.onclick = null;
-            btnNoAlbum.onclick = null;
-            btnCancel.onclick = null;
-            modal.onclick = null;
+
+            // Ocultar panel
+            panel.classList.add('hide');
+            if (layoutRow) layoutRow.classList.remove('panel-active');
+
+            // Desconectar listeners para evitar fugas de memoria
+            if (btnConfirm) btnConfirm.onclick = null;
+            if (btnNoAlbum) btnNoAlbum.onclick = null;
+            if (btnClose)   btnClose.onclick   = null;
             window.removeEventListener('keydown', onEscKey);
+
             resolve(val);
         };
 
+        // Cerrar con Escape (cancela sin agregar a cola)
         const onEscKey = (e) => {
             if (e.key === 'Escape') cleanUp('__CANCELLED__');
         };
         window.addEventListener('keydown', onEscKey);
 
-        // Cerrar si hace clic fuera de la cajita (en el backdrop oscuro)
-        modal.onclick = (e) => {
-            if (e.target === modal) cleanUp('__CANCELLED__');
-        };
+        // Botón: Confirmar álbum
+        if (btnConfirm) {
+            btnConfirm.onclick = () => {
+                const finalAlbum = albumInput?.value?.trim() || suggestedArtist;
+                cleanUp(finalAlbum);
+            };
+        }
 
-        btnConfirm.onclick = () => {
-            const finalAlbum = albumInput.value.trim() || suggestedArtist;
-            cleanUp(finalAlbum);
-        };
+        // Botón: Sin categoría
+        if (btnNoAlbum) {
+            btnNoAlbum.onclick = () => {
+                cleanUp(null);
+            };
+        }
 
-        btnNoAlbum.onclick = () => {
-            cleanUp(null); // Sin categoría (Sin álbum)
-        };
-
-        btnCancel.onclick = () => {
-            cleanUp('__CANCELLED__');
-        };
+        // Botón ✕: Cerrar panel (cancela sin agregar a cola)
+        if (btnClose) {
+            btnClose.onclick = () => {
+                cleanUp('__CANCELLED__');
+            };
+        }
     });
 }
 
@@ -937,7 +964,7 @@ async function searchYouTube() {
                 let chosenAlbum = $('albumInput')?.value?.trim() || null;
 
                 if (!chosenAlbum && detectedBand) {
-                    const ans = await promptAlbumConfirmation(detectedBand);
+                    const ans = await promptAlbumConfirmation(detectedBand, fullTitleClean);
                     if (ans === '__CANCELLED__') return;
                     chosenAlbum = ans;
                     if (chosenAlbum) $('albumInput').value = chosenAlbum;
@@ -966,7 +993,7 @@ async function searchYouTube() {
                 let chosenAlbum = $('albumInput')?.value?.trim() || null;
 
                 if (!chosenAlbum && detectedBand) {
-                    const ans = await promptAlbumConfirmation(detectedBand);
+                    const ans = await promptAlbumConfirmation(detectedBand, fullTitleClean);
                     if (ans === '__CANCELLED__') return;
                     chosenAlbum = ans;
                     if (chosenAlbum) $('albumInput').value = chosenAlbum;

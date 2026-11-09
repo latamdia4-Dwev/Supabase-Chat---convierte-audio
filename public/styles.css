@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/styles.css
- * Versión: 1.8.0
+ * Versión: 1.9.4
  * Descripción: Estilos CSS del chat original adaptados para el conversor:
  *              - Pantalla de bloqueo/login idéntica al chat (con todos los usuarios)
  *              - Grupos de álbumes y canciones idénticos al chat
@@ -1257,4 +1257,191 @@ button:disabled {
     0% { transform: translateX(-100%); }
     50% { transform: translateX(0); }
     100% { transform: translateX(100%); }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   PANEL LATERAL DE ÁLBUM EN EL DOM (Inamovible, al lado de búsqueda) [v1.9.4]
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Fila flex que contiene la cuadrícula de resultados + panel lateral de álbum */
+.search-layout-row {
+    display: flex;
+    flex-direction: row;
+    gap: 16px;
+    align-items: flex-start;
+    width: 100%;
+}
+
+/* La grilla de resultados ocupa todo el espacio disponible */
+.search-layout-row .search-results-grid {
+    flex: 1 1 0%;
+    min-width: 0;
+}
+
+/* Panel lateral de álbum: fijo a la derecha de la búsqueda */
+.album-side-panel {
+    flex: 0 0 300px;
+    width: 300px;
+    max-width: 300px;
+    background: #0f1623;
+    border: 1.5px solid #0284c7;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 4px 32px rgba(2, 132, 199, 0.18);
+    position: sticky;
+    top: 20px;
+    display: flex;
+    flex-direction: column;
+    animation: sidePanelSlideIn 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes sidePanelSlideIn {
+    from { opacity: 0; transform: translateX(24px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+.album-side-panel.hide {
+    display: none !important;
+}
+
+/* Cabecera del panel lateral */
+.album-side-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: linear-gradient(90deg, #0369a1, #0284c7);
+    border-bottom: 1px solid #0284c7;
+}
+
+.album-side-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: #fff;
+    letter-spacing: 0.01em;
+}
+
+.btn-side-close {
+    background: rgba(255,255,255,0.12);
+    border: none;
+    color: #e0f2fe;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+    flex-shrink: 0;
+}
+.btn-side-close:hover {
+    background: rgba(255,255,255,0.28);
+}
+
+/* Cuerpo del panel */
+.album-side-body {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Sección de artista / canción detectada */
+.album-side-section {
+    background: rgba(2, 132, 199, 0.08);
+    border: 1px solid rgba(2, 132, 199, 0.22);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.album-side-badge {
+    font-size: 0.7rem;
+    color: #38bdf8;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.album-side-artist {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.album-side-song {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Campo de entrada de álbum */
+.album-side-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.album-side-field label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.album-side-field input {
+    width: 100%;
+    padding: 8px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: rgba(0,0,0,0.3);
+    color: #fff;
+    font-size: 0.88rem;
+    transition: border-color 0.2s;
+    outline: none;
+}
+
+.album-side-field input:focus {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.18);
+}
+
+/* Botones de acción del panel */
+.album-side-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.album-btn-action {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 14px;
+    font-size: 0.84rem;
+    border-radius: 9px;
+}
+
+/* En pantallas < 900px: colapsa a columna vertical */
+@media (max-width: 900px) {
+    .search-layout-row {
+        flex-direction: column;
+    }
+    .album-side-panel {
+        flex: 0 0 auto;
+        width: 100%;
+        max-width: 100%;
+        position: static;
+    }
 }

@@ -4,6 +4,44 @@ Todas las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [v1.9.4] — 2026-11-08
+
+### Panel Lateral Inamovible de Album en el DOM + Estilos Completos
+
+#### 1. Eliminacion del Modal Flotante de Album (#albumPromptModal)
+- El modal flotante (position: fixed) se cerraba solo ante cualquier evento DOM externo.
+- Solucion: Eliminado #albumPromptModal. Sustituido por aside#albumPromptSidePanel,
+  ubicado directamente junto a #searchResultsGrid dentro de .search-layout-row (flex).
+
+#### 2. Panel Lateral Estatico en el DOM (#albumPromptSidePanel)
+- Vive permanentemente en el DOM, oculto con .hide. Inmune a cierres accidentales.
+- Muestra: artista detectado (verde), titulo completo, campo editable de album, 2 botones.
+- Animacion de entrada: sidePanelSlideIn — desliza desde la derecha.
+- position: sticky top 20px: visible mientras el usuario navega la lista de resultados.
+
+#### 3. Nueva promptAlbumConfirmation(suggestedArtist, songTitle) en app.js
+- Rellena #promptArtistNameText, #promptSongNameText y #promptAlbumInput.
+- Remueve .hide del panel y hace scrollIntoView smooth.
+- Resuelve la promesa al confirmar album, elegir sin categoria o presionar Escape/X.
+- Desconecta todos los listeners al resolver (evita fugas de memoria).
+- Parametro songTitle nuevo para mostrar el titulo completo de la cancion.
+- Llamadas actualizadas: promptAlbumConfirmation(detectedBand, fullTitleClean).
+
+#### 4. Estilos CSS del Panel Lateral (public/styles.css)
+- .search-layout-row: flex horizontal, gap 16px, align-items flex-start.
+- .album-side-panel: 300px fijo, fondo #0f1623, borde azul #0284c7, sticky top 20px.
+- .album-side-header: gradiente azul #0369a1 a #0284c7, titulo y boton cerrar.
+- .album-side-field input: foco con borde azul y sombra suave.
+- Responsive: <= 900px colapsa a columna vertical, panel pasa a 100% ancho.
+
+#### 5. Inicializacion Global del Boton X en DOMContentLoaded
+- Listener global para #btnCloseAlbumSidePanel (funciona incluso sin promesa activa).
+
+#### 6. Actualizacion de Cache-Busting
+- Todos los ?v= en index.html actualizados a 1.9.4 (styles, config, media-api, auth, app).
+
+---
+
 ## [v1.9.3] — 2026-11-08
 
 ### 📥 Despliegue Automático de la Lista de Cola y Cierre Fluido de Modales
