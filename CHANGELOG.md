@@ -4,6 +4,15 @@ Todas las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [v1.9.3] — 2026-11-08
+
+### 📥 Despliegue Automático de la Lista de Cola y Cierre Fluido de Modales
+- **Despliegue automático de la lista de cola**: Al presionar `⚡ Convertir` o `+ Cola`, la función `showQueuePanel()` ahora desminimiza automáticamente el panel flotante y remueve la clase `minimized`, permitiendo que el usuario vea de inmediato la lista de canciones encoladas, el indicador de subida en vivo y los tiempos estimados de espera.
+- **Cierre fluido del modal de álbum por backdrop y Escape**: El modal de confirmación de álbum (`#albumPromptModal`) ahora se cierra automáticamente si el usuario hace clic fuera de la cajita (en el fondo oscuro) o presiona la tecla `Escape`, evitando bloqueos en la interfaz.
+- **Sincronización de auto-cierre**: Se vinculó `closeAlbumPrompt()` dentro de `closeSimilarityNotification()`, garantizando que tanto la tarjeta de duplicados como el diálogo de álbumes se limpien automáticamente al cambiar de canción o interactuar con la lista de cola.
+
+---
+
 ## [v1.9.2] — 2026-11-08
 
 ### 💿 Detección Inteligente de Banda/Álbum, Limpieza de Título Completo y Corrección de Cola

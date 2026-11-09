@@ -2,12 +2,12 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.9.2
+ * Versión: 1.9.3
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
  *              - Resaltado visual interactivo y badge animado en la canción de YouTube en reproducción
  *              - Tarjeta inline inamovible de comparación de duplicados
  *              - Sincronización en tiempo real del reproductor previo y resultados de búsqueda
- *              - Cache-busting estricto (?v=1.9.2) y soporte SSL universal en backend
+ *              - Cache-busting estricto (?v=1.9.3) y soporte SSL universal en backend
  * ============================================================================
  */
 
@@ -448,9 +448,21 @@ function addToDownloadQueue(item) {
 
 function showQueuePanel() {
     const panel = $('downloadQueuePanel');
+    const btn = $('btnToggleQueueMinimize');
     if (panel) {
         panel.classList.remove('hide');
+        panel.classList.remove('minimized');
+        isQueueMinimized = false;
+        if (btn) {
+            btn.textContent = '−';
+            btn.title = 'Minimizar cola';
+        }
     }
+}
+
+function closeAlbumPrompt() {
+    const modal = $('albumPromptModal');
+    if (modal) modal.classList.add('hide');
 }
 
 function toggleQueueMinimize() {
@@ -761,7 +773,6 @@ function promptAlbumConfirmation(suggestedArtist) {
         const btnCancel = $('btnPromptCancel');
 
         if (!modal || !suggestedArtist) {
-            // Si no hay modal o no hay banda sugerida, resolver con lo que esté en albumInput
             resolve($('albumInput')?.value?.trim() || null);
             return;
         }
@@ -770,27 +781,41 @@ function promptAlbumConfirmation(suggestedArtist) {
         albumInput.value = suggestedArtist;
         modal.classList.remove('hide');
 
-        const cleanUp = () => {
+        let isResolved = false;
+
+        const cleanUp = (val) => {
+            if (isResolved) return;
+            isResolved = true;
             modal.classList.add('hide');
             btnConfirm.onclick = null;
             btnNoAlbum.onclick = null;
             btnCancel.onclick = null;
+            modal.onclick = null;
+            window.removeEventListener('keydown', onEscKey);
+            resolve(val);
+        };
+
+        const onEscKey = (e) => {
+            if (e.key === 'Escape') cleanUp('__CANCELLED__');
+        };
+        window.addEventListener('keydown', onEscKey);
+
+        // Cerrar si hace clic fuera de la cajita (en el backdrop oscuro)
+        modal.onclick = (e) => {
+            if (e.target === modal) cleanUp('__CANCELLED__');
         };
 
         btnConfirm.onclick = () => {
             const finalAlbum = albumInput.value.trim() || suggestedArtist;
-            cleanUp();
-            resolve(finalAlbum);
+            cleanUp(finalAlbum);
         };
 
         btnNoAlbum.onclick = () => {
-            cleanUp();
-            resolve(null); // Sin álbum / Sin categoría
+            cleanUp(null); // Sin categoría (Sin álbum)
         };
 
         btnCancel.onclick = () => {
-            cleanUp();
-            resolve('__CANCELLED__');
+            cleanUp('__CANCELLED__');
         };
     });
 }
@@ -1169,6 +1194,7 @@ function findSimilarTrack(candidateTitle) {
 let modalOpenedAt = 0;
 
 function closeSimilarityNotification() {
+    closeAlbumPrompt(); // [v1.9.3] Cierra cualquier modal de álbum pendiente
     const card = $('similarityInlineCard');
     if (card) {
         card.classList.add('hide');
