@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: server.js
- * Versión: 1.9.11
+ * Versión: 1.9.12
  * Descripción: Servidor Express optimizado y enfocado en YouTube:
  *              - Soporte de certificados SSL universales (--no-check-certificates)
  *              - Prevención de bloqueos por validación de certificado en Windows/Linux
@@ -146,7 +146,16 @@ function resolveCookiesPath() {
     const rawCookies = process.env.YOUTUBE_COOKIES || process.env.COOKIES_CONTENT || process.env.YT_COOKIES;
     if (rawCookies && rawCookies.trim().length > 10) {
         try {
-            fs.writeFileSync(TEMP_COOKIES_FILE, rawCookies.trim(), 'utf8');
+            let content = rawCookies.trim();
+            // Des-escapar saltos de línea \n y tabs \t si fueron ingresados como caracteres literales en Render
+            if (content.includes('\\n')) content = content.replace(/\\n/g, '\n');
+            if (content.includes('\\t')) content = content.replace(/\\t/g, '\t');
+            if (content.includes('\\r')) content = content.replace(/\\r/g, '\r');
+            // Asegurar cabecera Netscape obligatoria para yt-dlp
+            if (!content.startsWith('# Netscape HTTP Cookie File')) {
+                content = '# Netscape HTTP Cookie File\n' + content;
+            }
+            fs.writeFileSync(TEMP_COOKIES_FILE, content, 'utf8');
             return TEMP_COOKIES_FILE;
         } catch (e) {
             console.warn('[Cookies] Error escribiendo TEMP_COOKIES_FILE:', e.message);
@@ -154,7 +163,12 @@ function resolveCookiesPath() {
     }
     if (process.env.YOUTUBE_COOKIES_BASE64 && process.env.YOUTUBE_COOKIES_BASE64.trim().length > 10) {
         try {
-            const decoded = Buffer.from(process.env.YOUTUBE_COOKIES_BASE64.trim(), 'base64').toString('utf8');
+            let decoded = Buffer.from(process.env.YOUTUBE_COOKIES_BASE64.trim(), 'base64').toString('utf8');
+            if (decoded.includes('\\n')) decoded = decoded.replace(/\\n/g, '\n');
+            if (decoded.includes('\\t')) decoded = decoded.replace(/\\t/g, '\t');
+            if (!decoded.startsWith('# Netscape HTTP Cookie File')) {
+                decoded = '# Netscape HTTP Cookie File\n' + decoded;
+            }
             fs.writeFileSync(TEMP_COOKIES_FILE, decoded, 'utf8');
             return TEMP_COOKIES_FILE;
         } catch (e) {
@@ -168,11 +182,11 @@ function resolveCookiesPath() {
  * Genera el arreglo base de argumentos para yt-dlp con bypass de certificados SSL,
  * soporte de JavaScript runtime, cookies automáticas y cliente seleccionado.
  */
-function buildBaseYtDlpArgs(clientStrategy, extraArgs = [], useProxy = true) {
+function buildBaseYtDlpArgs(clientStrategy, extraArgs = [], useProxy = true, useCookies = true) {
     const args = [
         '--no-check-certificates',
         '--prefer-insecure',
-        '--socket-timeout', '15',
+        '--socket-timeout', useProxy ? '10' : '15',
         '--js-runtimes', 'node'
     ];
 
@@ -180,9 +194,11 @@ function buildBaseYtDlpArgs(clientStrategy, extraArgs = [], useProxy = true) {
         args.push('--extractor-args', clientStrategy);
     }
 
-    const cookiesPath = resolveCookiesPath();
-    if (cookiesPath) {
-        args.push('--cookies', cookiesPath);
+    if (useCookies) {
+        const cookiesPath = resolveCookiesPath();
+        if (cookiesPath) {
+            args.push('--cookies', cookiesPath);
+        }
     }
 
     if (useProxy) {
@@ -411,36 +427,47 @@ app.post('/api/convert-and-upload', async (req, res) => {
     const expectedMp3Path = path.join(TEMP_DIR, `${tempId}.mp3`);
 
     const hasCookies = !!resolveCookiesPath();
-    const clientStrategies = hasCookies
-        ? [
-            'youtube:player_client=mweb,web',
-            'youtube:player_client=web,mweb',
-            'youtube:player_client=android,web',
-            'youtube:player_client=tv_embedded,web',
-            'youtube:player_client=visionos,android_vr'
-        ]
-        : [
-            'youtube:player_client=visionos,android_vr',
-            'youtube:player_client=android_vr,visionos',
-            'youtube:player_client=ios,android',
-            'youtube:player_client=android,web',
-            'youtube:player_client=mweb,web'
-        ];
+    const hasProxy = !!(process.env.YOUTUBE_PROXY || process.env.HTTP_PROXY || process.env.HTTPS_PROXY);
+
+    // Matriz de estrategias escalonadas [v1.9.12]:
+    // 1. Con cookies y con proxy (si están configurados)
+    // 2. Con cookies y SIN proxy (por si el proxy se cayó o da timeout como 51.158.54.223)
+    // 3. SIN cookies y SIN proxy con VisionOS (rescatador universal ante "Sign in to confirm you're not a bot")
+    // 4. SIN cookies y con proxy (android,web)
+    // 5. Conexión nativa de rescate
+    const clientStrategies = [];
+
+    if (hasCookies && hasProxy) {
+        clientStrategies.push({ client: 'youtube:player_client=mweb,web', useProxy: true, useCookies: true, label: 'Cookies + Proxy (mweb,web)' });
+        clientStrategies.push({ client: 'youtube:player_client=web,mweb', useProxy: false, useCookies: true, label: 'Cookies Directo Sin Proxy (Rescate por proxy caído)' });
+    } else if (hasCookies) {
+        clientStrategies.push({ client: 'youtube:player_client=mweb,web', useProxy: false, useCookies: true, label: 'Cookies Directo (mweb,web)' });
+        clientStrategies.push({ client: 'youtube:player_client=web,mweb', useProxy: false, useCookies: true, label: 'Cookies Directo (web,mweb)' });
+    }
+
+    // Estrategias de rescate universal SIN COOKIES (eluden el bloqueo de bot detection)
+    clientStrategies.push({ client: 'youtube:player_client=visionos,android_vr', useProxy: false, useCookies: false, label: 'Bypass Bot VisionOS Sin Cookies (Directo)' });
+    if (hasProxy) {
+        clientStrategies.push({ client: 'youtube:player_client=android_vr,visionos', useProxy: true, useCookies: false, label: 'Bypass AndroidVR Con Proxy Sin Cookies' });
+    }
+    clientStrategies.push({ client: 'youtube:player_client=ios,android', useProxy: false, useCookies: false, label: 'Bypass iOS Sin Cookies (Directo)' });
+    clientStrategies.push({ client: null, useProxy: false, useCookies: false, label: 'Nativo Limpio Sin Extractor Args' });
 
     try {
         console.log(`[YouTube Convert] Iniciando pipeline de conversión para: ${url}`);
+        console.log(`[YouTube Convert] Estado: Cookies=${hasCookies}, Proxy=${hasProxy}, Estrategias=${clientStrategies.length}`);
 
         let downloadSuccess = false;
         let lastDownloadError = null;
 
         for (let attempt = 1; attempt <= clientStrategies.length; attempt++) {
+            const strat = clientStrategies[attempt - 1];
             try {
-                const clientArg = clientStrategies[attempt - 1];
-                console.log(`[YouTube Convert] Intento ${attempt}/${clientStrategies.length} usando estrategia: ${clientArg}`);
+                console.log(`[YouTube Convert] Intento ${attempt}/${clientStrategies.length}: ${strat.label}`);
 
-                const ytdlArgs = buildBaseYtDlpArgs(clientArg, [
-                    '--retries', '3',
-                    '--fragment-retries', '3',
+                const ytdlArgs = buildBaseYtDlpArgs(strat.client, [
+                    '--retries', '2',
+                    '--fragment-retries', '2',
                     '--ffmpeg-location', FFMPEG_BIN,
                     '-x',
                     '--audio-format', 'mp3',
@@ -448,23 +475,24 @@ app.post('/api/convert-and-upload', async (req, res) => {
                     '-o', tempFileTemplate,
                     '--no-playlist',
                     url.trim()
-                ]);
+                ], strat.useProxy, strat.useCookies);
 
                 await runProcess(YTDLP_BIN, ytdlArgs);
 
                 if (fs.existsSync(expectedMp3Path)) {
                     downloadSuccess = true;
-                    console.log(`[YouTube Convert] Descarga y transcodificación completadas en el intento ${attempt}.`);
+                    console.log(`[YouTube Convert] Descarga y transcodificación completadas con éxito en el intento ${attempt} (${strat.label}).`);
                     break;
                 }
             } catch (dlErr) {
                 lastDownloadError = dlErr;
-                console.warn(`[YouTube Convert] Intento ${attempt} no exitoso: ${dlErr.message}`);
+                const errSnippet = (dlErr.message || '').split('\n')[0];
+                console.warn(`[YouTube Convert] Intento ${attempt} falló: ${errSnippet}. Saltando al siguiente intento...`);
                 if (fs.existsSync(expectedMp3Path)) {
                     try { fs.unlinkSync(expectedMp3Path); } catch (e) {}
                 }
                 if (attempt < clientStrategies.length) {
-                    await sleep(1200 * attempt);
+                    await sleep(600);
                 }
             }
         }
@@ -608,7 +636,7 @@ app.use((req, res) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
     const cookiesResolved = resolveCookiesPath();
     console.log(`=======================================================`);
-    console.log(` Servidor Conversor de YouTube a MP3 v1.9.11 activo:`);
+    console.log(` Servidor Conversor de YouTube a MP3 v1.9.12 activo:`);
     console.log(` Local:      http://localhost:${PORT}`);
     console.log(` Plataforma activa: ${process.platform} (${process.arch})`);
     console.log(` yt-dlp:     ${YTDLP_BIN}`);

@@ -4,6 +4,28 @@ Todas las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [v1.9.12] — 2026-11-09
+
+### 🛡️ Reparación de Cola (pollForTrackAfterTimeout), Bypass Anti-Bot y Resiliencia Total de Proxy
+
+#### 1. Corrección del Error en Cola de Descargas (Folder)
+- **Causa**: Al producirse un timeout o corte 504 por proxy lento, la cola invocaba `pollForTrackAfterTimeout`, arrojando un `ReferenceError` que dejaba los elementos de la cola en error rojo.
+- **Corrección**: Se implementó `pollForTrackAfterTimeout` en [app.js](file:///public/app.js) para sondear periódicamente en Supabase si la pista terminó de transcodificarse y subirse en segundo plano, marcándola en verde sin trabar la cola.
+
+#### 2. Normalización de Cookies de YouTube en Render y VPS
+- **Causa**: Al copiar `YOUTUBE_COOKIES` en Render, los saltos de línea y tabulaciones muchas veces se escapaban como `\n` y `\t` literales y carecían de la cabecera obligatoria Netscape, haciendo que yt-dlp ignorara la sesión.
+- **Corrección**: `resolveCookiesPath()` ahora des-escapa automáticamente `\n`, `\t` y `\r` y garantiza la cabecera `# Netscape HTTP Cookie File` para que la sesión de YouTube sea leída al 100%.
+
+#### 3. Rescate Automático ante Bloqueo "Sign in to confirm you're not a bot" y Proxies Caídos
+- **Causa**: Si una cookie está bloqueada por Bot Detection de YouTube o un proxy como `51.158.54.223` no responde ("took too long to respond"), todos los intentos con cookies o proxy fallaban.
+- **Corrección**: El pipeline de `/api/convert-and-upload` ahora implementa una matriz escalonada:
+  1. Con cookies + con proxy.
+  2. Con cookies + **conexión directa sin proxy** (rescata peticiones si el proxy está caído).
+  3. **Rescate universal SIN COOKIES ni proxy con VisionOS** (elude automáticamente el bloqueo de "Sign in to confirm you're not a bot" y descarga audio en alta calidad).
+  4. Rescate secundario con Android VR e iOS.
+
+---
+
 ## [v1.9.11] — 2026-11-08
 
 ### ⚡ Álbum Persistente por Búsqueda, Botón Pegar Portapapeles y Acceso a Última Búsqueda

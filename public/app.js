@@ -623,6 +623,42 @@ function renderDownloadQueue() {
  * Procesa la cola de descarga secuencialmente: SUBE UNA CANCIÓN A LA VEZ
  * con cálculo de tiempo real y sondeo anti-504 para garantizar que nunca se trabe.
  */
+
+/**
+ * Sondeo automático para ítems de la cola ante cortes de proxy o timeout (504):
+ * Consulta a Supabase si el servidor completó la conversión y subida en segundo plano [v1.9.12]
+ */
+async function pollForTrackAfterTimeout(customTitle, startTimeIso, maxWaitSeconds = 90) {
+    const cleanExpected = (customTitle || '').trim().toLowerCase();
+    const intervalMs = 4000;
+    const maxAttempts = Math.ceil((maxWaitSeconds * 1000) / intervalMs);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        await new Promise(r => setTimeout(r, intervalMs));
+        try {
+            const { data: newTracks, error } = await supabaseClient
+                .from('music_tracks')
+                .select('*')
+                .eq('user_id', currentUserId)
+                .is('deleted_at', null)
+                .gte('created_at', startTimeIso)
+                .order('created_at', { ascending: false });
+
+            if (!error && Array.isArray(newTracks) && newTracks.length > 0) {
+                const match = newTracks.find(t => 
+                    (t.display_name && t.display_name.trim().toLowerCase() === cleanExpected) ||
+                    (cleanExpected && t.display_name && t.display_name.trim().toLowerCase().includes(cleanExpected))
+                ) || newTracks[0];
+
+                if (match) return match;
+            }
+        } catch (pollErr) {
+            // Reintento silencioso
+        }
+    }
+    return null;
+}
+
 async function processDownloadQueue() {
     if (isQueueProcessing) return;
 
