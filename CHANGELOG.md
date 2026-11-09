@@ -4,6 +4,30 @@ Todas las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [v1.9.8] — 2026-11-08
+
+### 🛡️ Blindaje Total de Búsqueda en YouTube, Fallback Anti-Caída de Proxy y Verificación Integral
+
+#### 1. Resiliencia de Búsqueda ante Proxies Caídos o Lentos
+- **Estrategias escalonadas**: `/api/youtube-search` ahora implementa un pipeline de reintentos inteligentes:
+  1. `youtube:player_client=visionos,android_vr` (con proxy, si está configurado).
+  2. `youtube:player_client=android_vr,visionos` (con proxy).
+  3. `youtube:player_client=ios,android` (**conexión directa sin proxy**, rescate automático).
+  4. Búsqueda nativa sin extractor-args (**conexión directa sin proxy**).
+- **Socket Timeout**: Se fijó `--socket-timeout 15` y `--prefer-insecure` para que ningún proxy caído o red restringida con certificados interceptados cuelgue el proceso.
+
+#### 2. Feedback en Tiempo Real en la Consola del Conversor
+- `searchYouTube()` emite eventos en vivo en la consola:
+  - *"🔍 Buscando '[término]' en YouTube..."*
+  - *"✔ [X] canciones encontradas..."*
+  - *"Sin resultados para '[término]'."*
+- Se aplicó `e.preventDefault(); e.stopPropagation();` en los botones de acción para aislar completamente los eventos.
+
+#### 3. Actualización de Cache-Busting
+- `styles.css?v=1.9.8`, `app.js?v=1.9.8` y scripts dependientes actualizados para forzar la recarga limpia de activos en el navegador.
+
+---
+
 ## [v1.9.7] — 2026-11-08
 
 ### 🎛️ Panel Lateral de Duplicados a la Derecha y Activación Operativa de Cola

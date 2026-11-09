@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.9.7
+ * Versión: 1.9.8
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
  *              - Resaltado visual interactivo y badge animado en la canción de YouTube en reproducción
  *              - Tarjeta inline inamovible de comparación de duplicados
@@ -941,7 +941,10 @@ async function proceedToQueueWithAlbum(item, titleToUse, detectedBand) {
 async function searchYouTube() {
     closeSimilarityNotification(); // [v1.9.2] Auto-cerrar duplicados al buscar
     const query = $('ytSearchInput').value.trim();
-    if (!query) return;
+    if (!query) {
+        logEvent('Escribe el nombre de una canción o artista para buscar.', 'warn');
+        return;
+    }
 
     const limit = parseInt($('ytSearchLimitSelect').value, 10) || 25;
     const btn = $('btnYtSearch');
@@ -951,6 +954,7 @@ async function searchYouTube() {
     try {
         btn.disabled = true;
         btn.textContent = 'Buscando...';
+        logEvent(`🔍 Buscando "${query}" en YouTube (${limit} resultados)...`, 'info');
         resultsGrid.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Buscando canciones en YouTube...</div>';
         resultsGrid.classList.remove('hide');
         controlsBar.classList.add('hide');
@@ -959,15 +963,17 @@ async function searchYouTube() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query, limit })
-        });
+        }, 35000);
 
         if (!data.results || data.results.length === 0) {
             resultsGrid.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No se encontraron resultados para tu búsqueda.</div>';
+            logEvent(`Sin resultados para "${query}". Intenta con otros términos.`, 'warn');
             return;
         }
 
         controlsBar.classList.remove('hide');
         $('searchResultsCountText').textContent = `${data.results.length} canciones encontradas para "${query}":`;
+        logEvent(`✔ ${data.results.length} canciones encontradas para "${query}".`, 'success');
 
         resultsGrid.innerHTML = '';
         data.results.forEach(item => {
@@ -1060,7 +1066,8 @@ async function searchYouTube() {
             queueBtn.className = 'search-btn-queue';
             queueBtn.innerHTML = '+ Cola';
             queueBtn.title = 'Añadir a la cola de descargas';
-            queueBtn.onclick = async () => {
+            queueBtn.onclick = async (e) => {
+                if (e) { e.preventDefault(); e.stopPropagation(); }
                 await processTrackSelection({ item, fullTitleClean, detectedBand });
             };
 
@@ -1072,7 +1079,8 @@ async function searchYouTube() {
             convertDirectBtn.style.color = '#fff';
             convertDirectBtn.innerHTML = '⚡ Convertir';
             convertDirectBtn.title = 'Convertir y subir a tu perfil';
-            convertDirectBtn.onclick = async () => {
+            convertDirectBtn.onclick = async (e) => {
+                if (e) { e.preventDefault(); e.stopPropagation(); }
                 await processTrackSelection({ item, fullTitleClean, detectedBand });
             };
 

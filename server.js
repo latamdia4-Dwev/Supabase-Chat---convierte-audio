@@ -167,9 +167,11 @@ function resolveCookiesPath() {
  * Genera el arreglo base de argumentos para yt-dlp con bypass de certificados SSL,
  * soporte de JavaScript runtime, cookies automáticas y cliente seleccionado.
  */
-function buildBaseYtDlpArgs(clientStrategy, extraArgs = []) {
+function buildBaseYtDlpArgs(clientStrategy, extraArgs = [], useProxy = true) {
     const args = [
         '--no-check-certificates',
+        '--prefer-insecure',
+        '--socket-timeout', '15',
         '--js-runtimes', 'node'
     ];
 
@@ -182,9 +184,11 @@ function buildBaseYtDlpArgs(clientStrategy, extraArgs = []) {
         args.push('--cookies', cookiesPath);
     }
 
-    const proxy = process.env.YOUTUBE_PROXY || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
-    if (proxy && proxy.trim()) {
-        args.push('--proxy', proxy.trim());
+    if (useProxy) {
+        const proxy = process.env.YOUTUBE_PROXY || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+        if (proxy && proxy.trim()) {
+            args.push('--proxy', proxy.trim());
+        }
     }
 
     return args.concat(extraArgs);
@@ -219,24 +223,25 @@ app.post('/api/youtube-search', async (req, res) => {
     }
 
     const count = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50);
-    const clientOptions = [
-        'youtube:player_client=visionos,android_vr',
-        'youtube:player_client=android_vr,visionos',
-        'youtube:player_client=ios,android',
-        'youtube:player_client=android,web'
+    // Estrategias escalonadas: primero con proxy (si existe), luego conexión directa de rescate [v1.9.8]
+    const strategies = [
+        { client: 'youtube:player_client=visionos,android_vr', useProxy: true },
+        { client: 'youtube:player_client=android_vr,visionos', useProxy: true },
+        { client: 'youtube:player_client=ios,android', useProxy: false },
+        { client: null, useProxy: false } // Fallback sin extractor-args ni proxy
     ];
 
     let lastError = null;
-    for (let attempt = 1; attempt <= clientOptions.length; attempt++) {
+    for (let attempt = 1; attempt <= strategies.length; attempt++) {
         try {
-            const clientArg = clientOptions[attempt - 1];
-            const args = buildBaseYtDlpArgs(clientArg, [
+            const strat = strategies[attempt - 1];
+            const args = buildBaseYtDlpArgs(strat.client, [
                 `ytsearch${count}:${query.trim()}`,
                 '--dump-single-json',
                 '--no-warnings',
                 '--skip-download',
                 '--flat-playlist'
-            ]);
+            ], strat.useProxy);
 
             const { stdout } = await runProcess(YTDLP_BIN, args);
             const data = JSON.parse(stdout);
@@ -262,8 +267,8 @@ app.post('/api/youtube-search', async (req, res) => {
             return res.json({ query: query.trim(), total: results.length, results });
         } catch (err) {
             lastError = err;
-            console.warn(`[YouTube Search] Intento ${attempt} falló para "${query}": ${err.message}. Reintentando...`);
-            if (attempt < clientOptions.length) await sleep(1000 * attempt);
+            console.warn(`[YouTube Search] Intento ${attempt} falló para "${query}": ${err.message}. Reintentando con siguiente estrategia...`);
+            if (attempt < strategies.length) await sleep(800);
         }
     }
 
@@ -593,7 +598,7 @@ app.use((req, res) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
     const cookiesResolved = resolveCookiesPath();
     console.log(`=======================================================`);
-    console.log(` Servidor Conversor de YouTube a MP3 v1.9.7 activo:`);
+    console.log(` Servidor Conversor de YouTube a MP3 v1.9.8 activo:`);
     console.log(` Local:      http://localhost:${PORT}`);
     console.log(` Plataforma activa: ${process.platform} (${process.arch})`);
     console.log(` yt-dlp:     ${YTDLP_BIN}`);
