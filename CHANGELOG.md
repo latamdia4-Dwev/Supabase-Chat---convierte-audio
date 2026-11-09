@@ -4,6 +4,27 @@ Todas las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [v1.9.9] — 2026-11-08
+
+### 🎯 Ubicación en Recuadro Rojo, Corrección de Botones de Cola/Conversión y Estabilidad Integral
+
+#### 1. Posicionamiento en el Recuadro Rojo Exterior (Margen Derecho)
+- **Adaptativo milimétrico**: Tanto el panel de confirmación de álbum (`#albumPromptSidePanel`) como el de advertencia de duplicados (`#similarityInlineCard`) ahora usan la regla adaptativa:
+  `right: max(20px, calc(50vw - 370px - 325px));`
+  - En pantallas anchas/Full HD: se colocan automáticamente en el espacio negro libre a la derecha del contenedor principal (`.container`), en el recuadro rojo exacto indicado por el usuario, sin empujar los resultados de búsqueda.
+  - En laptops o resoluciones con escalado de Windows (1280px–1366px): se mantienen fijos a 20px del margen derecho del viewport sin desbordarse ni provocar scroll horizontal.
+  - En pantallas menores a 900px: se deslizan fluidamente desde abajo como *bottom-sheet*.
+
+#### 2. Corrección Crítica en Botones de Cola y Convertir
+- **Prevención de `TypeError`**: Se eliminó un intento de acceso a `classList` en elementos inexistentes en `closeSimilarityNotification()`. Este error detenía silenciosamente la ejecución de los botones `+ Cola`, `⚡ Convertir` y `Buscar`.
+- Con esta corrección, los botones ejecutan fluidamente la validación de duplicados y el selector de álbumes existentes/nuevos.
+
+#### 3. Limpieza de Caracteres y Emojis en Español
+- Restaurados todos los caracteres especiales y emojis en botones y paneles (`▶ Probar`, `✔ Elegir`, `+ Cola`, `⚡ Convertir`, `✏️ Cambiar Nombre`, `✕ Cancelar`).
+- Cache-busting actualizado a `v1.9.9` en `index.html` y `server.js`.
+
+---
+
 ## [v1.9.8] — 2026-11-08
 
 ### 🛡️ Blindaje Total de Búsqueda en YouTube, Fallback Anti-Caída de Proxy y Verificación Integral

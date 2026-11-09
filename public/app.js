@@ -1014,7 +1014,7 @@ async function searchYouTube() {
             const listenBtn = document.createElement('button');
             listenBtn.type = 'button';
             listenBtn.className = 'search-btn-listen';
-            listenBtn.textContent = (currentPlayingVideoId === item.id) ? '🔊 Sonando' : '▶ Probar';
+            listenBtn.textContent = (currentPlayingVideoId === item.id) ? '🎵 Sonando' : '▶ Probar';
             listenBtn.title = 'Escuchar vista previa antes de convertir';
             listenBtn.onclick = () => {
                 closeSimilarityNotification();
@@ -1314,7 +1314,7 @@ function findSimilarTrack(candidateTitle) {
 let modalOpenedAt = 0;
 
 function closeSimilarityNotification() {
-    closeAlbumPrompt(); // [v1.9.3] Cierra cualquier modal de álbum pendiente
+    closeAlbumPrompt(); // Cierra cualquier modal de álbum pendiente
     const card = $('similarityInlineCard');
     if (card) {
         card.classList.add('hide');
@@ -1322,12 +1322,18 @@ function closeSimilarityNotification() {
         audios.forEach(a => {
             try { a.pause(); a.currentTime = 0; } catch (e) {}
         });
-        $('inlineAudioCompareWrap').innerHTML = '';
-        $('inlineRenameSection').classList.add('hide');
-        $('btnInlineRename').textContent = 'Cambiar Nombre';
-        $('inlineCompareTable').classList.remove('hide');
-        $('inlineActionsRow').classList.remove('hide');
-        $('inlineLoadingState').classList.add('hide');
+        const wrap = $('inlineAudioCompareWrap');
+        if (wrap) wrap.innerHTML = '';
+        const renameSec = $('inlineRenameSection');
+        if (renameSec) renameSec.classList.add('hide');
+        const btnRename = $('btnInlineRename');
+        if (btnRename) btnRename.textContent = '✏️ Cambiar Nombre';
+        const compTable = $('inlineCompareTable');
+        if (compTable) compTable.classList.remove('hide');
+        const actRow = $('inlineActionsRow');
+        if (actRow) actRow.classList.remove('hide');
+        const loadState = $('inlineLoadingState');
+        if (loadState) loadState.classList.add('hide');
     }
     const modal = $('similarityModal');
     if (modal) modal.classList.add('hide');

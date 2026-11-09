@@ -42,6 +42,7 @@ body {
     line-height: 1.5;
     padding: 2rem 1rem 6rem 1rem;
     min-height: 100vh;
+    overflow-x: hidden;
     display: flex;
     justify-content: center;
 }
@@ -1271,34 +1272,7 @@ button:disabled {
 }
 
 /* Panel lateral: FIJO al lado derecho del viewport, fuera del flujo del documento */
-.album-side-panel {
-    position: fixed;
-    /* Calculamos: 50vw + mitad del container (370px) + gap de 20px */
-    left: calc(50% + 390px);
-    top: 50%;
-    transform: translateY(-50%);
-    width: 280px;
-    max-width: calc(50vw - 410px); /* Respeta el borde del viewport */
-    min-width: 220px;
-    background: #0f1623;
-    border: 1.5px solid #0284c7;
-    border-radius: 14px;
-    overflow: hidden;
-    box-shadow: 0 4px 40px rgba(2, 132, 199, 0.22);
-    z-index: 900;
-    display: flex;
-    flex-direction: column;
-    animation: sidePanelSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@keyframes sidePanelSlideIn {
-    from { opacity: 0; transform: translateX(24px); }
-    to   { opacity: 1; transform: translateX(0); }
-}
-
-.album-side-panel.hide {
-    display: none !important;
-}
+/* album-side-panel definitions moved to consolidated rule */
 
 /* Cabecera del panel lateral */
 .album-side-header {
@@ -1499,28 +1473,7 @@ button:disabled {
 /* ══════════════════════════════════════════════════════════════════════
    PANEL LATERAL DE DUPLICADOS EN LA POSICIÓN DERECHA DEL VIEWPORT [v1.9.7]
    ══════════════════════════════════════════════════════════════════════ */
-.similarity-side-panel {
-    position: fixed;
-    left: calc(50% + 390px);
-    top: 50%;
-    transform: translateY(-50%);
-    width: 290px;
-    max-width: calc(50vw - 410px);
-    min-width: 230px;
-    background: #131720;
-    border: 1.5px solid #eab308;
-    border-radius: 14px;
-    overflow: hidden;
-    box-shadow: 0 4px 40px rgba(234, 179, 8, 0.22);
-    z-index: 910;
-    display: flex;
-    flex-direction: column;
-    animation: sidePanelSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.similarity-side-panel.hide {
-    display: none !important;
-}
+/* similarity-side-panel definitions moved to consolidated rule */
 
 .similarity-side-header {
     display: flex;
@@ -1558,6 +1511,70 @@ button:disabled {
     .similarity-side-panel {
         position: fixed;
         left: 50%;
+        top: auto;
+        bottom: 0;
+        transform: translateX(-50%);
+        width: 95vw;
+        max-width: 480px;
+        border-radius: 14px 14px 0 0;
+        animation: sidePanelSlideUp 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+}
+
+
+/* ==========================================================================
+   PANELES LATERALES FIJOS: RECUADRO ROJO (Margen derecho exterior del viewport)
+   v1.9.9: Posicionamiento milimétrico adaptativo:
+   - Pantallas anchas: se adosa fuera del .container a la derecha.
+   - Pantallas medianas (laptop/escalado): se adhiere a 20px del borde derecho.
+   - Pantallas móviles (< 900px): se desliza como bottom-sheet.
+   ========================================================================== */
+
+.album-side-panel,
+.similarity-side-panel {
+    position: fixed;
+    right: max(20px, calc(50vw - 370px - 325px));
+    top: 50%;
+    transform: translateY(-50%);
+    width: 310px;
+    max-width: calc(100vw - 40px);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    animation: sidePanelSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.album-side-panel {
+    background: #0f1623;
+    border: 1.5px solid #0284c7;
+    box-shadow: 0 8px 36px rgba(2, 132, 199, 0.28);
+    z-index: 920;
+}
+
+.similarity-side-panel {
+    background: #131720;
+    border: 1.5px solid #eab308;
+    box-shadow: 0 8px 36px rgba(234, 179, 8, 0.28);
+    z-index: 930;
+}
+
+.album-side-panel.hide,
+.similarity-side-panel.hide {
+    display: none !important;
+}
+
+@keyframes sidePanelSlideIn {
+    from { opacity: 0; transform: translateY(-50%) translateX(24px); }
+    to   { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
+@media (max-width: 900px) {
+    .album-side-panel,
+    .similarity-side-panel {
+        position: fixed;
+        left: 50%;
+        right: auto;
         top: auto;
         bottom: 0;
         transform: translateX(-50%);
