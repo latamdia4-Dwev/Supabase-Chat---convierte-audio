@@ -7,7 +7,7 @@
  *              - Resaltado visual interactivo y badge animado en la canción de YouTube en reproducción
  *              - Tarjeta inline inamovible de comparación de duplicados
  *              - Sincronización en tiempo real del reproductor previo y resultados de búsqueda
- *              - Cache-busting estricto (?v=1.8.5) y soporte SSL universal en backend
+ *              - Cache-busting estricto (?v=1.9.1) y soporte SSL universal en backend
  * ============================================================================
  */
 
@@ -379,7 +379,31 @@ if ($('btnToggleExpandPreview')) {
 const downloadQueue = [];
 let isQueueProcessing = false;
 let isQueueMinimized = false;
+const uploadDurationsHistory = [40]; // Histórico de tiempos de subida en segundos (base 40s)
 
+/**
+ * Calcula el tiempo promedio de subida a partir de los tiempos reales registrados
+ */
+function getAverageUploadDuration() {
+    if (uploadDurationsHistory.length === 0) return 40;
+    const sum = uploadDurationsHistory.reduce((a, b) => a + b, 0);
+    return Math.max(Math.round(sum / uploadDurationsHistory.length), 15);
+}
+
+/**
+ * Formatea segundos a texto amigable de tiempo estimado
+ */
+function formatTimeRemaining(seconds) {
+    if (!seconds || seconds <= 0) return '0s';
+    if (seconds < 60) return `~${seconds}s`;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return s > 0 ? `~${m}m ${s}s` : `~${m}m`;
+}
+
+/**
+ * Agrega una canción a la cola de descargas y procesa secuencialmente una por una
+ */
 function addToDownloadQueue(item) {
     if (!item || !item.url) return;
 
@@ -392,23 +416,31 @@ function addToDownloadQueue(item) {
     }
 
     const queueId = 'queue_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const avgDuration = getAverageUploadDuration();
+    const pendingCount = downloadQueue.filter(q => q.status === 'pending').length;
+    const estimatedWaitSec = (pendingCount + (isQueueProcessing ? 1 : 0)) * avgDuration;
+
     const queueItem = {
         id: queueId,
         url: item.url,
         title: item.title || 'Canción de YouTube',
+        cleanTitle: item.cleanTitle || item.title || 'Canción de YouTube',
         album: item.album || null,
         thumbnail: item.thumbnail || 'https://i.ytimg.com/vi/hqdefault.jpg',
         durationString: item.durationString || '',
         status: 'pending', // 'pending' | 'processing' | 'completed' | 'error'
+        elapsedSec: 0,
         errorMsg: null
     };
 
     downloadQueue.push(queueItem);
     showQueuePanel();
     renderDownloadQueue();
-    logEvent(`➕ Añadida a la cola: "${queueItem.title}" (Posición #${downloadQueue.filter(q => q.status === 'pending').length})`, 'info');
 
-    // Iniciar el procesamiento automático si no está activo
+    const pos = downloadQueue.filter(q => q.status === 'pending').length;
+    logEvent(`➕ Añadida a la cola: "${queueItem.title}" (Posición #${pos} | Espera est.: ${formatTimeRemaining(estimatedWaitSec)})`, 'info');
+
+    // Iniciar procesamiento secuencial si no está activo
     if (!isQueueProcessing) {
         processDownloadQueue();
     }
@@ -443,7 +475,7 @@ function removeFromDownloadQueue(queueId) {
     if (idx !== -1) {
         const item = downloadQueue[idx];
         if (item.status === 'processing') {
-            logEvent(`No se puede eliminar "${item.title}" porque ya se está descargando.`, 'warn');
+            logEvent(`No se puede quitar "${item.title}" porque ya se está descargando.`, 'warn');
             return;
         }
         downloadQueue.splice(idx, 1);
@@ -456,7 +488,6 @@ function removeFromDownloadQueue(queueId) {
 }
 
 function clearCompletedDownloadQueue() {
-    const initialLen = downloadQueue.length;
     for (let i = downloadQueue.length - 1; i >= 0; i--) {
         if (downloadQueue[i].status === 'completed' || downloadQueue[i].status === 'error') {
             downloadQueue.splice(i, 1);
@@ -468,20 +499,34 @@ function clearCompletedDownloadQueue() {
     }
 }
 
+/**
+ * Renderiza la interfaz visual de la cola con tiempos estimados y estados detallados
+ */
 function renderDownloadQueue() {
     const panel = $('downloadQueuePanel');
     const badge = $('queueCountBadge');
     const container = $('queueListContainer');
     if (!panel || !badge || !container) return;
 
-    const pendingCount = downloadQueue.filter(q => q.status === 'pending' || q.status === 'processing').length;
+    const pendingItems = downloadQueue.filter(q => q.status === 'pending');
+    const processingItem = downloadQueue.find(q => q.status === 'processing');
+    const pendingCount = pendingItems.length + (processingItem ? 1 : 0);
     badge.textContent = pendingCount;
+
+    // Actualizar métricas de tiempo estimado en la barra superior
+    const avgSec = getAverageUploadDuration();
+    const totalRemainingSec = pendingCount * avgSec;
+    const avgEl = $('queueAvgTimeText');
+    const remEl = $('queueEstimatedRemainingText');
+    if (avgEl) avgEl.textContent = `Promedio: ~${avgSec}s`;
+    if (remEl) remEl.textContent = `Restante: ${formatTimeRemaining(totalRemainingSec)} (${pendingCount})`;
 
     container.innerHTML = '';
     if (downloadQueue.length === 0) {
         return;
     }
 
+    let pendingIndex = 0;
     downloadQueue.forEach(item => {
         const row = document.createElement('div');
         row.className = `queue-item ${item.status}`;
@@ -494,32 +539,51 @@ function renderDownloadQueue() {
         const info = document.createElement('div');
         info.className = 'queue-item-info';
 
+        const titleRow = document.createElement('div');
+        titleRow.style.display = 'flex';
+        titleRow.style.alignItems = 'center';
+        titleRow.style.overflow = 'hidden';
+
+        if (item.status === 'pending') {
+            pendingIndex++;
+            const posBadge = document.createElement('span');
+            posBadge.className = 'queue-item-pos-badge';
+            posBadge.textContent = `#${pendingIndex}`;
+            titleRow.appendChild(posBadge);
+        }
+
         const title = document.createElement('div');
         title.className = 'queue-item-title';
         title.textContent = item.title;
         title.title = item.title;
+        titleRow.appendChild(title);
 
         const status = document.createElement('div');
         status.className = 'queue-item-status';
 
         if (item.status === 'pending') {
-            status.innerHTML = '⏳ En espera...';
+            const itemWaitEst = pendingIndex * avgSec;
+            status.innerHTML = `⏳ En espera <span class="queue-item-estimate">~${formatTimeRemaining(itemWaitEst)}</span>`;
         } else if (item.status === 'processing') {
-            status.innerHTML = '🔄 Descargando y convirtiendo...';
+            status.innerHTML = '🔄 Convirtiendo y subiendo...';
+            const progressWrap = document.createElement('div');
+            progressWrap.className = 'queue-progress-bar-wrap';
+            progressWrap.innerHTML = '<div class="queue-progress-bar-fill"></div>';
+            status.appendChild(progressWrap);
         } else if (item.status === 'completed') {
-            status.innerHTML = '✔ Subida con éxito';
+            status.innerHTML = `✔ Completada ${item.elapsedSec ? `(${item.elapsedSec}s)` : ''}`;
         } else if (item.status === 'error') {
             status.innerHTML = `❌ Error: ${item.errorMsg || 'Falló'}`;
             status.title = item.errorMsg || '';
         }
 
-        info.appendChild(title);
+        info.appendChild(titleRow);
         info.appendChild(status);
 
         row.appendChild(thumb);
         row.appendChild(info);
 
-        // Botón de eliminar si no está en proceso
+        // Botón de eliminar para items pendientes o con error
         if (item.status !== 'processing') {
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
@@ -537,12 +601,17 @@ function renderDownloadQueue() {
     });
 }
 
+/**
+ * Procesa la cola de descarga secuencialmente: SUBE UNA CANCIÓN A LA VEZ
+ * con cálculo de tiempo real y sondeo anti-504 para garantizar que nunca se trabe.
+ */
 async function processDownloadQueue() {
     if (isQueueProcessing) return;
 
     const nextItem = downloadQueue.find(q => q.status === 'pending');
     if (!nextItem) {
         isQueueProcessing = false;
+        renderDownloadQueue();
         return;
     }
 
@@ -550,33 +619,58 @@ async function processDownloadQueue() {
     nextItem.status = 'processing';
     renderDownloadQueue();
 
+    const startTimeMs = Date.now();
+    const startTimeIso = new Date(startTimeMs - 2000).toISOString();
     logEvent(`[Cola] Iniciando descarga de: "${nextItem.title}"`, 'info');
 
     try {
-        const sessionRes = await client.auth.getSession();
+        const sessionRes = await supabaseClient.auth.getSession();
         const token = sessionRes.data?.session?.access_token || currentAccessToken;
 
         if (!token || !currentUserId) {
             throw new Error('Sesión no disponible. Inicia sesión nuevamente.');
         }
 
-        const result = await safeFetchJson('/api/convert-and-upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                url: nextItem.url,
-                album: nextItem.album || null,
-                customTitle: nextItem.title,
-                accessToken: token,
-                userId: currentUserId
-            })
-        }, 180000);
+        let uploadSucceeded = false;
+        try {
+            await safeFetchJson('/api/convert-and-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: nextItem.url,
+                    album: nextItem.album || null,
+                    customTitle: nextItem.cleanTitle || nextItem.title,
+                    accessToken: token,
+                    userId: currentUserId
+                })
+            }, 180000);
+            uploadSucceeded = true;
+        } catch (fetchErr) {
+            // Si el proxy cortó con 504 o timeout, verificar en Supabase si el servidor completó la subida
+            if (fetchErr.message && (fetchErr.message.includes('504') || fetchErr.message.includes('tiempo'))) {
+                logEvent(`[Cola] ⏳ El proxy dio 504 en "${nextItem.title}", verificando en perfil si terminó de subir...`, 'warn');
+                const polledTrack = await pollForTrackAfterTimeout(nextItem.cleanTitle || nextItem.title, startTimeIso, 90);
+                if (polledTrack) {
+                    uploadSucceeded = true;
+                } else {
+                    throw fetchErr;
+                }
+            } else {
+                throw fetchErr;
+            }
+        }
 
-        nextItem.status = 'completed';
-        logEvent(`✔ [Cola] "${nextItem.title}" completada y agregada al perfil.`, 'success');
+        if (uploadSucceeded) {
+            const elapsedSec = Math.max(Math.round((Date.now() - startTimeMs) / 1000), 5);
+            nextItem.status = 'completed';
+            nextItem.elapsedSec = elapsedSec;
+            uploadDurationsHistory.push(elapsedSec);
+            if (uploadDurationsHistory.length > 10) uploadDurationsHistory.shift();
 
-        await loadAlbumsDataList();
-        await loadUploadedTracks();
+            logEvent(`✔ [Cola] "${nextItem.title}" completada con éxito en ${elapsedSec}s.`, 'success');
+            await loadAlbumsDataList();
+            await loadUploadedTracks();
+        }
 
     } catch (err) {
         nextItem.status = 'error';
@@ -586,10 +680,10 @@ async function processDownloadQueue() {
         isQueueProcessing = false;
         renderDownloadQueue();
 
-        // Procesar siguiente item en la cola con pequeña pausa para no saturar
+        // Pausa de cortesía de 600ms antes de procesar la siguiente canción de la cola
         setTimeout(() => {
             processDownloadQueue();
-        }, 800);
+        }, 600);
     }
 }
 
@@ -607,7 +701,6 @@ if ($('queueHeader')) {
         }
     };
 }
-
 
 // ══════════════════════════════════════════════════════════════════════
 // 4. BUSCADOR EXTENDIDO DE YOUTUBE (HASTA 40 RESULTADOS CON PRE-ESCUCHA)
@@ -718,30 +811,16 @@ async function searchYouTube() {
             convertDirectBtn.innerHTML = '⚡ Convertir';
             convertDirectBtn.title = 'Convertir a MP3 y subir a mi perfil de inmediato';
 
+                        // Botón de Conversión: Ahora agrega directamente a la cola secuencial
             convertDirectBtn.onclick = () => {
-                if (isQueueProcessing) {
-                    addToDownloadQueue({
-                        url: item.url,
-                        title: item.cleanTitle || item.title,
-                        album: $('albumSelectInput').value.trim() || null,
-                        thumbnail: item.thumbnail,
-                        durationString: item.durationString
-                    });
-                    return;
-                }
-
-                currentLoadedVideoId = item.id;
-                $('youtubeUrlInput').value = item.url;
-                $('customTitleInput').value = item.cleanTitle || item.title;
-
-                $('videoPreviewBox').classList.remove('hide');
-                $('videoThumbImg').src = item.thumbnail;
-                $('videoMetaTitle').textContent = item.title;
-                $('videoMetaDetails').textContent = `${item.uploader} • Duración: ${item.durationString}`;
-
-                logEvent(`Procesando de inmediato: "${item.title}"`, 'info');
-                $('btnConvertAndUpload').click();
-                updatePlayingPreviewHighlight();
+                addToDownloadQueue({
+                    url: item.url,
+                    title: item.title,
+                    cleanTitle: item.cleanTitle || item.title,
+                    album: $('albumSelectInput').value.trim() || null,
+                    thumbnail: item.thumbnail,
+                    durationString: item.durationString
+                });
             };
 
             // Botón Añadir a la Cola
@@ -1272,60 +1351,22 @@ async function processPlaylistUpload(plData, album) {
         return;
     }
 
-    const btn = $('btnConvertAndUpload');
-    btn.disabled = true;
-    $('btnResetConvertState').classList.remove('hide');
+    logEvent(`Encolando ${selectedTracks.length} canciones de la playlist "${plData.playlistTitle}"...`, 'info');
+    selectedTracks.forEach(t => {
+        addToDownloadQueue({
+            url: t.url,
+            title: t.title,
+            cleanTitle: t.cleanTitle || t.title,
+            album: album || plData.playlistTitle || null,
+            thumbnail: t.thumbnail,
+            durationString: t.durationString
+        });
+    });
 
-    const consoleBox = $('consoleBox');
-    consoleBox.classList.remove('hide');
-    consoleBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-    logEvent(`Iniciando conversión de playlist: ${selectedTracks.length} canciones al álbum "${album || 'Sin álbum'}"`, 'info');
-
-    let successCount = 0;
-    try {
-        for (let i = 0; i < selectedTracks.length; i++) {
-            const t = selectedTracks[i];
-            $('convertBtnText').textContent = `Procesando [${i + 1}/${selectedTracks.length}]: ${t.title}`;
-            logEvent(`[${i + 1}/${selectedTracks.length}] Descargando "${t.title}"...`, 'info');
-
-            try {
-                const sessionRes = await supabaseClient.auth.getSession();
-                const token = sessionRes.data?.session?.access_token || currentAccessToken;
-
-                await safeFetchJson('/api/convert-and-upload', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        url: t.url,
-                        album: album || null,
-                        customTitle: t.cleanTitle || t.title,
-                        accessToken: token,
-                        userId: currentUserId
-                    })
-                }, 180000);
-
-                successCount++;
-                logEvent(`✔ [${i + 1}/${selectedTracks.length}] "${t.title}" agregada.`, 'success');
-            } catch (e) {
-                logEvent(`✘ Error en "${t.title}": ${e.message}`, 'error');
-            }
-        }
-
-        logEvent(`Finalizada la playlist: ${successCount} de ${selectedTracks.length} canciones procesadas.`, 'success');
-
-        $('playlistBox').classList.add('hide');
-        $('youtubeUrlInput').value = '';
-        currentPlaylistData = null;
-
-        await loadAlbumsDataList();
-        await loadUploadedTracks();
-
-    } catch (fatalErr) {
-        logEvent(`Error general en la playlist: ${fatalErr.message}`, 'error');
-    } finally {
-        resetConvertButtonState();
-    }
+    $('playlistBox').classList.add('hide');
+    $('youtubeUrlInput').value = '';
+    currentPlaylistData = null;
+    showQueuePanel();
 }
 
 $('btnResetConvertState').onclick = () => {
@@ -1338,8 +1379,6 @@ $('btnConvertAndUpload').onclick = async (e) => {
         e.preventDefault();
         e.stopPropagation();
     }
-    const btn = $('btnConvertAndUpload');
-    if (btn.disabled) return;
 
     const album = $('albumInput').value.trim() || null;
 
@@ -1351,7 +1390,7 @@ $('btnConvertAndUpload').onclick = async (e) => {
     const url = $('youtubeUrlInput').value.trim();
     if (!url) {
         logEvent('Ingresa un enlace de YouTube o selecciona una canción del buscador.', 'warn');
-        if ($('tabSearchYt').classList.contains('active')) {
+        if ($('tabModeSearch') && $('tabModeSearch').classList.contains('active')) {
             $('ytSearchInput').focus();
         } else {
             $('youtubeUrlInput').focus();
@@ -1365,13 +1404,31 @@ $('btnConvertAndUpload').onclick = async (e) => {
         $('customTitleInput').value = customTitle;
     }
 
+    const thumbImg = $('videoThumbImg')?.src || 'https://i.ytimg.com/vi/hqdefault.jpg';
+
+    const triggerAddToQueue = (finalTitle) => {
+        addToDownloadQueue({
+            url,
+            title: finalTitle || customTitle,
+            cleanTitle: finalTitle || customTitle,
+            album: album || null,
+            thumbnail: thumbImg,
+            durationString: ''
+        });
+        $('youtubeUrlInput').value = '';
+        $('customTitleInput').value = '';
+        $('videoPreviewBox').classList.add('hide');
+        currentLoadedVideoId = null;
+    };
+
     const match = findSimilarTrack(customTitle);
     if (match) {
         showSimilarityInlineCard(customTitle, album, match.track, (finalTitle) => {
-            return executeUpload(url, finalTitle || customTitle, album);
+            triggerAddToQueue(finalTitle);
+            return Promise.resolve();
         });
     } else {
-        await executeUpload(url, customTitle, album);
+        triggerAddToQueue(customTitle);
     }
 };
 
@@ -1597,3 +1654,112 @@ $('btnCollapseAllAlbums').onclick = () => {
 };
 
 $('filterTracksInput').addEventListener('input', renderAlbumsView);
+
+// ══════════════════════════════════════════════════════════════════════
+// 9. NAVEGACIÓN COMPARTIDA Y SINGLE SIGN-ON (SSO) CON EL CHAT [v1.9.1]
+// Permite transferir la sesión activa automáticamente entre
+// Conversor YouTube y Supabase Chat sin volver a pedir usuario/contraseña.
+// ══════════════════════════════════════════════════════════════════════
+
+const CHAT_APP_BASE_URL = 'https://latamdia4-dwev.github.io/Supabase-Chat/';
+
+/**
+ * Abre la aplicación del Chat transfiriendo la sesión de Supabase si está disponible
+ */
+async function openChatWithSession() {
+    try {
+        const sessionRes = await supabaseClient.auth.getSession();
+        const session = sessionRes.data?.session;
+
+        if (session && session.access_token && session.refresh_token) {
+            // Transferencia de sesión segura vía hash de URL (no viaja en cabeceras HTTP de red)
+            const targetUrl = `${CHAT_APP_BASE_URL}#access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}`;
+            window.open(targetUrl, '_blank', 'noopener');
+        } else {
+            // Si no hay sesión iniciada, abrir el Chat en modo normal
+            window.open(CHAT_APP_BASE_URL, '_blank', 'noopener');
+        }
+    } catch (e) {
+        console.warn('Error al preparar enlace al Chat:', e);
+        window.open(CHAT_APP_BASE_URL, '_blank', 'noopener');
+    }
+}
+
+// Botón de navegación al Chat en la barra de usuario
+if ($('btnGoToChatWithSession')) {
+    $('btnGoToChatWithSession').onclick = openChatWithSession;
+}
+
+/**
+ * Comprueba al cargar la página si hay una sesión transferida por URL hash
+ * o si ya existe una sesión guardada en localStorage por Supabase Auth
+ */
+async function initSessionAutoLogin() {
+    try {
+        // 1. Comprobar si viene token transferido desde el Chat en el hash de la URL
+        if (window.location.hash && window.location.hash.includes('access_token=')) {
+            const hashClean = window.location.hash.startsWith('#') ? window.location.hash.substring(1) : window.location.hash;
+            const params = new URLSearchParams(hashClean);
+            const accessToken = params.get('access_token');
+            const refreshToken = params.get('refresh_token');
+
+            if (accessToken && refreshToken) {
+                logEvent('Restaurando sesión transferida desde el Chat...', 'info');
+                const { data, error } = await supabaseClient.auth.setSession({
+                    access_token: accessToken,
+                    refresh_token: refreshToken
+                });
+
+                // Limpiar el hash de la barra de direcciones para no dejar tokens en el historial
+                history.replaceState(null, '', window.location.pathname + window.location.search);
+
+                if (!error && data.session) {
+                    await finalizeAutoLogin(data.session);
+                    return;
+                }
+            }
+        }
+
+        // 2. Comprobar si ya existe una sesión previa en Supabase Auth
+        const { data: sessionData } = await supabaseClient.auth.getSession();
+        if (sessionData && sessionData.session && sessionData.session.user) {
+            await finalizeAutoLogin(sessionData.session);
+        }
+    } catch (autoErr) {
+        console.warn('Aviso en auto-login de sesión:', autoErr);
+    }
+}
+
+async function finalizeAutoLogin(session) {
+    currentUserId = session.user.id;
+    currentAccessToken = session.access_token;
+
+    // Obtener username de la tabla profiles
+    try {
+        const { data: profile } = await supabaseClient
+            .from('profiles')
+            .select('username')
+            .eq('id', currentUserId)
+            .maybeSingle();
+
+        currentUsername = (profile && profile.username) || session.user.email?.split('@')[0] || 'Usuario';
+    } catch (pe) {
+        currentUsername = session.user.email?.split('@')[0] || 'Usuario';
+    }
+
+    $('currentUsernameText').textContent = currentUsername;
+    $('lockOverlay').style.display = 'none';
+    $('appCard').classList.remove('hide');
+
+    logEvent(`✔ Sesión restaurada automáticamente como @${currentUsername}`, 'success');
+
+    await loadAlbumsDataList();
+    await loadUploadedTracks();
+}
+
+// Iniciar comprobación de sesión al arrancar la app
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initSessionAutoLogin);
+} else {
+    initSessionAutoLogin();
+}

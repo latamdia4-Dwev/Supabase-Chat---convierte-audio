@@ -16,6 +16,8 @@ temp_audio/
 # Variables de entorno locales
 .env
 .env.local
+cookies.txt
+*.cookies
 
 # Archivos del sistema operativo
 .DS_Store

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor YouTube a MP3 - Supabase Chat v1.8.7</title>
-    <!-- Estilos de la aplicación v1.8.7 con cache-busting -->
-    <link rel="stylesheet" href="styles.css?v=1.8.7">
+    <title>Conversor YouTube a MP3 - Supabase Chat v1.9.1</title>
+    <!-- Estilos de la aplicación v1.9.1 con cache-busting -->
+    <link rel="stylesheet" href="styles.css?v=1.9.1">
 </head>
 <body>
     <div class="container">
@@ -45,6 +45,11 @@
                 </form>
 
                 <p class="lock-error" id="lockError" style="display: none;"></p>
+                <div class="lock-chat-link-wrap" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); text-align: center;">
+                    <a href="https://latamdia4-dwev.github.io/Supabase-Chat/" id="linkGoToChatFromLock" class="link-chat-nav" target="_blank" rel="noopener" style="color: var(--primary); text-decoration: none; font-size: 0.85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                        <span>💬</span><span>Ir a la página del Chat</span>
+                    </a>
+                </div>
             </div>
         </div>
 
@@ -58,7 +63,12 @@
                     <span>👤</span>
                     <span>Conectado como: <strong id="currentUsernameText" style="color: #fff;"></strong></span>
                 </div>
-                <button id="btnLogout" class="btn-logout" type="button">Cerrar Sesión</button>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button id="btnGoToChatWithSession" class="btn-nav-chat" type="button" title="Abrir el Chat con tu sesión iniciada automáticamente">
+                        💬 Abrir Chat
+                    </button>
+                    <button id="btnLogout" class="btn-logout" type="button">Cerrar Sesión</button>
+                </div>
             </div>
 
             <!-- Pestañas de Modo: Buscar en YouTube vs Enlace Directo / Playlist -->
@@ -286,6 +296,17 @@
                     <button id="btnToggleQueueMinimize" class="btn-queue-action" type="button" title="Minimizar / Expandir cola">−</button>
                 </div>
             </div>
+            <!-- Barra de métricas y tiempo restante estimado [v1.9.1] -->
+            <div id="queueMetricsBar" class="queue-metrics-bar">
+                <div class="queue-metric-item">
+                    <span class="queue-metric-icon">⏱️</span>
+                    <span id="queueAvgTimeText">Promedio: ~40s</span>
+                </div>
+                <div class="queue-metric-item">
+                    <span class="queue-metric-icon">⏳</span>
+                    <span id="queueEstimatedRemainingText">Restante: 0s</span>
+                </div>
+            </div>
             <div id="queueListContainer" class="queue-list-container">
                 <!-- Elementos de la cola generados dinámicamente -->
             </div>
@@ -362,9 +383,9 @@
 
     <!-- Scripts de Supabase y Utilidades Compartidas del Chat con cache-busting v1.8.7 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/js/config.js?v=1.8.7"></script>
-    <script src="/js/media-api.js?v=1.8.7"></script>
-    <script src="/js/auth.js?v=1.8.7"></script>
+    <script src="/js/config.js?v=1.9.1"></script>
+    <script src="/js/media-api.js?v=1.9.1"></script>
+    <script src="/js/auth.js?v=1.9.1"></script>
     <script src="app.js?v=1.9.1"></script>
 </body>
 </html>
