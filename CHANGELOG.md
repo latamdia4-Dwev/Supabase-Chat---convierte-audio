@@ -4,6 +4,32 @@ Todas las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [v1.9.2] — 2026-11-08
+
+### 💿 Detección Inteligente de Banda/Álbum, Limpieza de Título Completo y Corrección de Cola
+
+#### 1. Cookies Directas en el Repositorio para Despliegues en la Nube
+- **Inclusión directa en el repo**: Se removió `cookies.txt` de `.gitignore` y se integró físicamente en la raíz y en `bin/yt_cookies_builtin.txt`, garantizando que Render (o cualquier host en la nube) disponga de la sesión activa de YouTube automáticamente al clonar y desplegar sin configuraciones manuales.
+
+#### 2. Detección de Artista/Banda y Confirmación Interactiva de Álbum
+- **Extracción precisa**: La función `extractArtistAndTrackTitle()` analiza el título y el canal de YouTube para extraer con exactitud el nombre del artista o banda (ej. "Guns N' Roses", "Deftones").
+- **Modal interactivo de confirmación**: Al seleccionar una canción (`✔ Elegir`, `+ Cola` o `⚡ Convertir`), el sistema pregunta: *"Detectamos la banda: [Nombre]. ¿Es correcto asignarla a este álbum o prefieres dejarla sin categoría?"* con opciones de un clic:
+  - `✔ Sí, guardar en este álbum`
+  - `📁 Sin categoría (Sin álbum)`
+  - `✏️ Personalizar nombre`
+
+#### 3. Limpieza de Título Preservando Banda y Canción Completas
+- Elimina automáticamente coletillas parasitarias de YouTube tales como `(Official Music Video)`, `[Official HD Video]`, `(Lyrics)`, `[Remastered]`, `[4K]`, `Audio Oficial`, etc.
+- Preserva estrictamente el nombre completo del video en formato limpio: **"Banda - Nombre de la Canción"**.
+
+#### 4. Corrección Definitiva del Botón "+ Cola"
+- Corregida la referencia en el DOM: se resolvió el error de lectura sobre el campo de álbum inexistente (`albumSelectInput` -> `albumInput`), permitiendo que el botón `+ Cola` agregue canciones inmediatamente a la cola de descargas con su tiempo estimado.
+
+#### 5. Auto-Cierre de la Interfaz de Duplicados
+- La tarjeta flotante de comparación de duplicados (`#similarityInlineCard`) ahora se cierra y limpia automáticamente cada vez que el usuario selecciona otra canción, realiza una nueva búsqueda o ingresa un enlace diferente, eliminando la necesidad de cerrarla manualmente con la cruz.
+
+---
+
 ## [v1.9.1] — 2026-11-08
 
 ### 🚀 Cola de Descarga Secuencial Inteligente + Single Sign-On (SSO) con Supabase Chat

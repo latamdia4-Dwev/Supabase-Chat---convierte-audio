@@ -2,12 +2,12 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.9.1
+ * Versión: 1.9.2
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
  *              - Resaltado visual interactivo y badge animado en la canción de YouTube en reproducción
  *              - Tarjeta inline inamovible de comparación de duplicados
  *              - Sincronización en tiempo real del reproductor previo y resultados de búsqueda
- *              - Cache-busting estricto (?v=1.9.1) y soporte SSL universal en backend
+ *              - Cache-busting estricto (?v=1.9.2) y soporte SSL universal en backend
  * ============================================================================
  */
 
@@ -706,7 +706,97 @@ if ($('queueHeader')) {
 // 4. BUSCADOR EXTENDIDO DE YOUTUBE (HASTA 40 RESULTADOS CON PRE-ESCUCHA)
 // ══════════════════════════════════════════════════════════════════════
 
+
+/**
+ * Extrae la banda/artista y limpia el título de la canción eliminando
+ * etiquetas parasitarias de YouTube (Official Video, Lyrics, 4K, Remastered),
+ * pero preservando el nombre completo del video como "Banda - Canción". [v1.9.2]
+ */
+function extractArtistAndTrackTitle(rawTitle, uploader = '') {
+    if (!rawTitle) return { fullCleanTitle: 'Canción', artist: '', songName: 'Canción' };
+
+    let cleaned = rawTitle
+        // Remover etiquetas de video/audio oficial, lyrics, remaster, etc.
+        .replace(/\s*[\(\[]\s*(?:official\s*(?:music\s*)?video|video\s*oficial|audio\s*oficial|official\s*audio|official\s*visualizer|visualizer|lyrics?|letra|remaster(?:ed)?|hd|4k|live|en\s*vivo|clip\s*officiel|video\s*clip)[^\)\]]*[\)\]]/gi, '')
+        // Remover sufijos sueltos tipo "| Official Video" o "- Official Audio"
+        .replace(/\s*[|\-]\s*(?:official\s*video|official\s*audio|video\s*oficial|audio\s*oficial|lyrics?|letra)\s*$/gi, '')
+        .replace(/[\\/:*?"<>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    let artist = '';
+    let songName = cleaned;
+
+    if (cleaned.includes(' - ')) {
+        const parts = cleaned.split(' - ');
+        artist = parts[0].trim();
+        songName = parts.slice(1).join(' - ').trim();
+    } else if (uploader) {
+        let cleanUploader = uploader
+            .replace(/\s*-\s*Topic$/i, '')
+            .replace(/VEVO$/i, '')
+            .replace(/\s*Official(?:\s*Channel)?$/i, '')
+            .trim();
+        artist = cleanUploader;
+    }
+
+    return {
+        fullCleanTitle: cleaned || rawTitle,
+        artist: artist || '',
+        songName: songName || cleaned
+    };
+}
+
+/**
+ * Muestra el modal interactivo para confirmar si se desea asignar la canción
+ * a la banda detectada, a otro álbum o dejarla sin categoría [v1.9.2]
+ */
+function promptAlbumConfirmation(suggestedArtist) {
+    return new Promise((resolve) => {
+        const modal = $('albumPromptModal');
+        const artistText = $('promptArtistNameText');
+        const albumInput = $('promptAlbumInput');
+        const btnConfirm = $('btnPromptConfirmAlbum');
+        const btnNoAlbum = $('btnPromptNoAlbum');
+        const btnCancel = $('btnPromptCancel');
+
+        if (!modal || !suggestedArtist) {
+            // Si no hay modal o no hay banda sugerida, resolver con lo que esté en albumInput
+            resolve($('albumInput')?.value?.trim() || null);
+            return;
+        }
+
+        artistText.textContent = suggestedArtist;
+        albumInput.value = suggestedArtist;
+        modal.classList.remove('hide');
+
+        const cleanUp = () => {
+            modal.classList.add('hide');
+            btnConfirm.onclick = null;
+            btnNoAlbum.onclick = null;
+            btnCancel.onclick = null;
+        };
+
+        btnConfirm.onclick = () => {
+            const finalAlbum = albumInput.value.trim() || suggestedArtist;
+            cleanUp();
+            resolve(finalAlbum);
+        };
+
+        btnNoAlbum.onclick = () => {
+            cleanUp();
+            resolve(null); // Sin álbum / Sin categoría
+        };
+
+        btnCancel.onclick = () => {
+            cleanUp();
+            resolve('__CANCELLED__');
+        };
+    });
+}
+
 async function searchYouTube() {
+    closeSimilarityNotification(); // [v1.9.2] Auto-cerrar duplicados al buscar
     const query = $('ytSearchInput').value.trim();
     if (!query) return;
 
@@ -743,18 +833,23 @@ async function searchYouTube() {
             row.dataset.videoId = item.id;
             row.id = `yt-track-${item.id}`;
 
+            // Extraer banda y título limpio completo ("Banda - Canción") [v1.9.2]
+            const parsed = extractArtistAndTrackTitle(item.title, item.uploader);
+            const fullTitleClean = parsed.fullCleanTitle;
+            const detectedBand = parsed.artist;
+
             const img = document.createElement('img');
             img.className = 'search-thumb';
             img.src = item.thumbnail;
-            img.alt = item.title;
+            img.alt = fullTitleClean;
 
             const info = document.createElement('div');
             info.className = 'search-info';
 
             const title = document.createElement('div');
             title.className = 'search-title';
-            title.textContent = item.title;
-            title.title = item.title;
+            title.textContent = fullTitleClean;
+            title.title = fullTitleClean;
 
             const channel = document.createElement('div');
             channel.className = 'search-channel';
@@ -766,74 +861,97 @@ async function searchYouTube() {
             const actions = document.createElement('div');
             actions.className = 'search-actions';
 
-            // Botón de Pre-escucha antes de descargar
+            // 1. Botón de Pre-escucha
             const listenBtn = document.createElement('button');
             listenBtn.type = 'button';
             listenBtn.className = 'search-btn-listen';
             listenBtn.textContent = (currentPlayingVideoId === item.id) ? '🔊 Sonando' : '▶ Probar';
             listenBtn.title = 'Escuchar vista previa antes de convertir';
             listenBtn.onclick = () => {
+                closeSimilarityNotification();
                 if (currentPlayingVideoId === item.id) {
                     closePreview();
                 } else {
-                    playPreview(item.id, item.title);
+                    playPreview(item.id, fullTitleClean);
                 }
             };
 
-            // Botón de Selección para personalizar título o álbum antes de convertir
+            // 2. Botón Elegir: asigna título y álbum y cierra duplicados anteriores [v1.9.2]
             const selectBtn = document.createElement('button');
             selectBtn.type = 'button';
             selectBtn.className = 'search-btn-select';
             selectBtn.textContent = '✔ Elegir';
             selectBtn.title = 'Seleccionar para ajustar nombre o álbum';
-
             selectBtn.onclick = () => {
+                closeSimilarityNotification(); // Cierra duplicados anteriores
                 currentLoadedVideoId = item.id;
                 $('youtubeUrlInput').value = item.url;
-                $('customTitleInput').value = item.cleanTitle || item.title;
+                $('customTitleInput').value = fullTitleClean;
+                if (detectedBand) {
+                    $('albumInput').value = detectedBand;
+                }
 
                 $('videoPreviewBox').classList.remove('hide');
                 $('videoThumbImg').src = item.thumbnail;
-                $('videoMetaTitle').textContent = item.title;
+                $('videoMetaTitle').textContent = fullTitleClean;
                 $('videoMetaDetails').textContent = `${item.uploader} • Duración: ${item.durationString}`;
 
-                logEvent(`Seleccionado: "${item.title}" (${item.durationString})`, 'info');
+                logEvent(`Seleccionado: "${fullTitleClean}" (Banda detectada: ${detectedBand || 'Ninguna'})`, 'info');
                 $('trackConfigSection').scrollIntoView({ behavior: 'smooth' });
                 updatePlayingPreviewHighlight();
             };
 
-            // Botón de Conversión Rápida de un Solo Clic
+            // 3. Botón Añadir a la Cola: pregunta álbum/banda y encola [v1.9.2]
+            const queueBtn = document.createElement('button');
+            queueBtn.type = 'button';
+            queueBtn.className = 'search-btn-queue';
+            queueBtn.innerHTML = '+ Cola';
+            queueBtn.title = 'Añadir a la cola de descargas';
+            queueBtn.onclick = async () => {
+                closeSimilarityNotification(); // Cierra duplicados anteriores
+                let chosenAlbum = $('albumInput')?.value?.trim() || null;
+
+                if (!chosenAlbum && detectedBand) {
+                    const ans = await promptAlbumConfirmation(detectedBand);
+                    if (ans === '__CANCELLED__') return;
+                    chosenAlbum = ans;
+                    if (chosenAlbum) $('albumInput').value = chosenAlbum;
+                }
+
+                addToDownloadQueue({
+                    url: item.url,
+                    title: fullTitleClean,
+                    cleanTitle: fullTitleClean,
+                    album: chosenAlbum,
+                    thumbnail: item.thumbnail,
+                    durationString: item.durationString
+                });
+            };
+
+            // 4. Botón Convertir: confirma álbum y encola directamente [v1.9.2]
             const convertDirectBtn = document.createElement('button');
             convertDirectBtn.type = 'button';
             convertDirectBtn.className = 'search-btn-select';
             convertDirectBtn.style.background = '#10b981';
             convertDirectBtn.style.color = '#fff';
             convertDirectBtn.innerHTML = '⚡ Convertir';
-            convertDirectBtn.title = 'Convertir a MP3 y subir a mi perfil de inmediato';
+            convertDirectBtn.title = 'Convertir y subir a tu perfil';
+            convertDirectBtn.onclick = async () => {
+                closeSimilarityNotification(); // Cierra duplicados anteriores
+                let chosenAlbum = $('albumInput')?.value?.trim() || null;
 
-                        // Botón de Conversión: Ahora agrega directamente a la cola secuencial
-            convertDirectBtn.onclick = () => {
+                if (!chosenAlbum && detectedBand) {
+                    const ans = await promptAlbumConfirmation(detectedBand);
+                    if (ans === '__CANCELLED__') return;
+                    chosenAlbum = ans;
+                    if (chosenAlbum) $('albumInput').value = chosenAlbum;
+                }
+
                 addToDownloadQueue({
                     url: item.url,
-                    title: item.title,
-                    cleanTitle: item.cleanTitle || item.title,
-                    album: $('albumSelectInput').value.trim() || null,
-                    thumbnail: item.thumbnail,
-                    durationString: item.durationString
-                });
-            };
-
-            // Botón Añadir a la Cola
-            const queueBtn = document.createElement('button');
-            queueBtn.type = 'button';
-            queueBtn.className = 'search-btn-queue';
-            queueBtn.innerHTML = '+ Cola';
-            queueBtn.title = 'Añadir a la cola de descargas';
-            queueBtn.onclick = () => {
-                addToDownloadQueue({
-                    url: item.url,
-                    title: item.cleanTitle || item.title,
-                    album: $('albumSelectInput').value.trim() || null,
+                    title: fullTitleClean,
+                    cleanTitle: fullTitleClean,
+                    album: chosenAlbum,
                     thumbnail: item.thumbnail,
                     durationString: item.durationString
                 });
@@ -862,6 +980,9 @@ async function searchYouTube() {
 }
 
 $('btnYtSearch').onclick = searchYouTube;
+$('youtubeUrlInput').addEventListener('input', () => closeSimilarityNotification());
+$('ytSearchInput').addEventListener('input', () => closeSimilarityNotification());
+
 $('ytSearchInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') searchYouTube();
 });
@@ -880,6 +1001,7 @@ $('btnPreviewCurrentVideo').onclick = () => {
 let currentPlaylistData = null;
 
 async function analyzeUrl() {
+    closeSimilarityNotification(); // [v1.9.2] Cierra duplicados
     const url = $('youtubeUrlInput').value.trim();
     if (!url) {
         logEvent('Ingresa un enlace de YouTube.', 'warn');
