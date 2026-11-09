@@ -4,6 +4,21 @@ Todas las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [v1.9.11] — 2026-11-08
+
+### ⚡ Álbum Persistente por Búsqueda, Botón Pegar Portapapeles y Acceso a Última Búsqueda
+
+#### 1. Persistencia Opcional de Álbum para la Búsqueda Actual
+- **Checkbox "Guardar todas las canciones de esta búsqueda en este álbum"**: Añadido en el panel lateral de álbum (`#albumPromptSidePanel`). Al agregar la primera canción de una búsqueda y confirmar el álbum con la casilla marcada, el álbum queda fijado para todas las canciones siguientes de esa misma consulta sin volver a abrir el panel en cada una.
+- **Reseteo automático en nueva búsqueda**: En cuanto el usuario escribe y ejecuta una consulta diferente en YouTube, el álbum vinculado a la búsqueda anterior se limpia y el panel vuelve a preguntar para el nuevo artista.
+- **Badge interactivo de álbum activo**: En la barra de resultados se muestra el álbum activo con un botón `✕` para desvincularlo en cualquier momento si se desea cambiar.
+
+#### 2. Botón Pegar Portapapeles y Acceso Rápido a Última Búsqueda
+- **Botón "📋 Pegar"**: Lee automáticamente el texto del portapapeles y lo coloca en el buscador de YouTube en un solo clic.
+- **Botón "🕒 Última: [Consulta]"**: Registra la última búsqueda en `localStorage` y permite recargarla y buscarla instantáneamente.
+
+---
+
 ## [v1.9.10] — 2026-11-08
 
 ### 🚀 Rescate de Subida a R2, Bypass Universal de Certificados SSL y Pregunta de Álbum por Canción

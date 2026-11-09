@@ -17,6 +17,10 @@ const $ = (id) => document.getElementById(id);
 let currentUserId = null;
 let currentAccessToken = null;
 let currentUsername = null;
+// Sesión de álbum vinculada a la búsqueda actual [v1.9.11]
+let currentSearchSessionQuery = '';
+let currentSearchSessionAlbum = null;
+
 let cachedUsernames = null;
 let myTracksCache = [];
 const albumExpandState = new Map();
@@ -866,14 +870,22 @@ async function promptAlbumConfirmation(suggestedArtist, songTitle = '') {
         if (btnConfirm) {
             btnConfirm.onclick = () => {
                 const finalAlbum = albumInput?.value?.trim() || suggestedArtist;
-                cleanUp(finalAlbum);
+                const chk = $('promptRememberAlbumForSearchCheckbox');
+                cleanUp({
+                    album: finalAlbum,
+                    rememberForSearch: chk ? chk.checked : false
+                });
             };
         }
 
         // Botón: Sin categoría
         if (btnNoAlbum) {
             btnNoAlbum.onclick = () => {
-                cleanUp(null);
+                const chk = $('promptRememberAlbumForSearchCheckbox');
+                cleanUp({
+                    album: null,
+                    rememberForSearch: chk ? chk.checked : false
+                });
             };
         }
 
@@ -921,13 +933,26 @@ async function processTrackSelection({ item, fullTitleClean, detectedBand }) {
 async function proceedToQueueWithAlbum(item, titleToUse, detectedBand) {
     let chosenAlbum = null;
 
-    // Si la pista tiene artista/banda detectada, siempre confirmamos con el usuario en el panel lateral [v1.9.10]
-    if (detectedBand) {
+    // Si ya se confirmó un álbum para toda la búsqueda actual, lo usamos directamente sin volver a preguntar [v1.9.11]
+    if (currentSearchSessionAlbum !== null && currentSearchSessionAlbum !== undefined) {
+        chosenAlbum = currentSearchSessionAlbum;
+        logEvent(`Usando álbum de esta búsqueda: "${chosenAlbum || 'Sin categoría'}" para "${titleToUse}".`, 'info');
+    } else if (detectedBand) {
+        // Primera canción de esta búsqueda: preguntamos en el panel lateral
         const ans = await promptAlbumConfirmation(detectedBand, titleToUse);
         if (ans === '__CANCELLED__') return;
-        chosenAlbum = ans;
+
+        if (ans && typeof ans === 'object') {
+            chosenAlbum = ans.album;
+            if (ans.rememberForSearch) {
+                currentSearchSessionAlbum = chosenAlbum || '';
+                updateSearchAlbumBadge();
+                logEvent(`Álbum "${chosenAlbum || 'Sin categoría'}" guardado para el resto de canciones de esta búsqueda.`, 'success');
+            }
+        } else {
+            chosenAlbum = ans;
+        }
     } else {
-        // Si no hay banda detectada, usa lo que el usuario haya escrito manualmente en el campo
         chosenAlbum = $('albumInput')?.value?.trim() || null;
     }
 
@@ -943,14 +968,26 @@ async function proceedToQueueWithAlbum(item, titleToUse, detectedBand) {
 
 async function searchYouTube() {
     closeSimilarityNotification();
-    // Limpiar album y titulo previo para que nueva busqueda empiece limpia [v1.9.10]
-    if ($('albumInput')) $('albumInput').value = '';
-    if ($('customTitleInput')) $('customTitleInput').value = ''; // [v1.9.2] Auto-cerrar duplicados al buscar
     const query = $('ytSearchInput').value.trim();
     if (!query) {
         logEvent('Escribe el nombre de una canción o artista para buscar.', 'warn');
         return;
     }
+
+    // Si la búsqueda cambió respecto a la anterior, reseteamos el álbum para volver a preguntar [v1.9.11]
+    if (query.toLowerCase() !== (currentSearchSessionQuery || '').toLowerCase()) {
+        currentSearchSessionAlbum = null;
+        currentSearchSessionQuery = query;
+        updateSearchAlbumBadge();
+        if ($('albumInput')) $('albumInput').value = '';
+        if ($('customTitleInput')) $('customTitleInput').value = '';
+    }
+
+    // Guardar en almacenamiento local como última búsqueda realizada
+    try {
+        localStorage.setItem('yt_last_search', query);
+        updateLastSearchButton(query);
+    } catch (e) {}
 
     const limit = parseInt($('ytSearchLimitSelect').value, 10) || 25;
     const btn = $('btnYtSearch');
@@ -2003,7 +2040,95 @@ async function finalizeAutoLogin(session) {
 
 // Iniciar comprobación de sesión al arrancar la app
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initSessionAutoLogin);
+    document.addEventListener('DOMContentLoaded', () => { initSessionAutoLogin(); initSearchHelpers(); });
 } else {
     initSessionAutoLogin();
+    initSearchHelpers();
+}
+
+
+// ============================================================================
+// AYUDAS DE BÚSQUEDA Y GESTIÓN DE SESIÓN DE ÁLBUM [v1.9.11]
+// ============================================================================
+
+function updateSearchAlbumBadge() {
+    const badge = $('currentSearchAlbumBadge');
+    const nameEl = $('currentSearchAlbumName');
+    if (!badge) return;
+
+    if (currentSearchSessionAlbum !== null && currentSearchSessionAlbum !== undefined) {
+        if (nameEl) nameEl.textContent = currentSearchSessionAlbum || 'Sin categoría';
+        badge.classList.remove('hide');
+    } else {
+        badge.classList.add('hide');
+    }
+}
+
+function updateLastSearchButton(query) {
+    const btnLast = $('btnLastSearch');
+    const textEl = $('lastSearchQueryText');
+    if (!btnLast) return;
+
+    const q = query || localStorage.getItem('yt_last_search');
+    if (q && q.trim()) {
+        btnLast.classList.remove('hide');
+        if (textEl) {
+            textEl.textContent = q.length > 15 ? q.substring(0, 13) + '…' : q;
+        }
+        btnLast.title = `Cargar última búsqueda: "${q}"`;
+    } else {
+        btnLast.classList.add('hide');
+    }
+}
+
+function initSearchHelpers() {
+    // 1. Botón Pegar desde portapapeles
+    const btnPaste = $('btnPasteSearch');
+    const input = $('ytSearchInput');
+    if (btnPaste && input) {
+        btnPaste.onclick = async () => {
+            try {
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    const clipText = await navigator.clipboard.readText();
+                    if (clipText && clipText.trim()) {
+                        input.value = clipText.trim();
+                        input.focus();
+                        logEvent(`Texto pegado: "${clipText.trim()}"`, 'info');
+                    } else {
+                        logEvent('El portapapeles está vacío.', 'warn');
+                    }
+                } else {
+                    input.focus();
+                    input.select();
+                    logEvent('Presiona Ctrl+V para pegar en el buscador.', 'info');
+                }
+            } catch (err) {
+                input.focus();
+                logEvent('No se pudo acceder al portapapeles. Usa Ctrl+V.', 'info');
+            }
+        };
+    }
+
+    // 2. Botón Última Búsqueda
+    const btnLast = $('btnLastSearch');
+    if (btnLast && input) {
+        btnLast.onclick = () => {
+            const last = localStorage.getItem('yt_last_search');
+            if (last) {
+                input.value = last;
+                searchYouTube();
+            }
+        };
+        updateLastSearchButton();
+    }
+
+    // 3. Botón para desvincular álbum fijado en la búsqueda actual
+    const btnReset = $('btnResetSearchAlbum');
+    if (btnReset) {
+        btnReset.onclick = () => {
+            currentSearchSessionAlbum = null;
+            updateSearchAlbumBadge();
+            logEvent('Álbum de la búsqueda desvinculado. Se volverá a preguntar en la siguiente canción.', 'info');
+        };
+    }
 }

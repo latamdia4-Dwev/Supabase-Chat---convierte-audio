@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor YouTube a MP3 - Supabase Chat v1.9.10</title>
-    <!-- Estilos de la aplicación con cache-busting v1.9.10 -->
+    <title>Conversor YouTube a MP3 - Supabase Chat v1.9.11</title>
+    <!-- Estilos de la aplicación con cache-busting v1.9.11 -->
     <link rel="stylesheet" href="styles.css?v=1.9.9">
 </head>
 <body>
@@ -80,7 +80,17 @@
             <!-- VISTA 1: Buscador de YouTube Integrado con Resultados Amplios y Pre-escucha -->
             <div id="viewSearch">
                 <div class="form-group">
-                    <label for="ytSearchInput">Buscar canciones en YouTube</label>
+                    <div class="search-quick-actions">
+                        <label for="ytSearchInput" style="margin: 0; font-weight: 600;">Buscar canciones en YouTube</label>
+                        <div class="search-quick-btns">
+                            <button id="btnPasteSearch" class="btn-subtle-action" type="button" title="Pegar texto del portapapeles">
+                                📋 Pegar
+                            </button>
+                            <button id="btnLastSearch" class="btn-subtle-action hide" type="button" title="Cargar última búsqueda">
+                                🕒 <span id="lastSearchQueryText">Última</span>
+                            </button>
+                        </div>
+                    </div>
                     <div class="input-row">
                         <input id="ytSearchInput" type="text" placeholder="Escribe el nombre de la canción o artista (ej. The Rolling Stones)...">
                         <select id="ytSearchLimitSelect" style="width: auto; padding: 0.85rem 0.6rem; font-size: 0.88rem; flex-shrink: 0;" title="Cantidad de resultados">
@@ -93,11 +103,17 @@
                 </div>
 
                 <div id="searchControlsBar" class="search-controls-bar hide">
-                    <span id="searchResultsCountText"></span>
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <span id="searchResultsCountText"></span>
+                        <span id="currentSearchAlbumBadge" class="search-album-badge hide" title="Álbum fijado para las canciones de esta búsqueda">
+                            <span>💿 Álbum: <strong id="currentSearchAlbumName"></strong></span>
+                            <button id="btnResetSearchAlbum" class="btn-badge-reset" type="button" title="Desvincular álbum para volver a preguntar en las siguientes canciones">✕</button>
+                        </span>
+                    </div>
                     <span style="font-size: 0.78rem; color: #888;">💡 Puedes presionar "▶ Probar" para escuchar antes de convertir</span>
                 </div>
 
-                <!-- Cuadrícula de Resultados de Búsqueda [v1.9.10b] -->
+                <!-- Cuadrícula de Resultados de Búsqueda [v1.9.11b] -->
                 <div id="searchResultsGrid" class="search-results-grid hide"></div>
             </div>
 
@@ -240,7 +256,7 @@
                     <button id="btnToggleQueueMinimize" class="btn-queue-action" type="button" title="Minimizar / Expandir cola">−</button>
                 </div>
             </div>
-            <!-- Barra de métricas y tiempo restante estimado [v1.9.10] -->
+            <!-- Barra de métricas y tiempo restante estimado [v1.9.11] -->
             <div id="queueMetricsBar" class="queue-metrics-bar">
                 <div class="queue-metric-item">
                     <span class="queue-metric-icon">⏱️</span>
@@ -325,7 +341,7 @@
         </div>
     </div>
 
-    <!-- Panel Lateral de Album: POSICION FIJA en el espacio derecho del viewport [v1.9.10b] -->
+    <!-- Panel Lateral de Album: POSICION FIJA en el espacio derecho del viewport [v1.9.11b] -->
     <aside id="albumPromptSidePanel" class="album-side-panel hide">
         <div class="album-side-header">
             <div class="album-side-title">
@@ -351,6 +367,12 @@
                 <label for="promptAlbumInput">O escribe un nombre nuevo:</label>
                 <input id="promptAlbumInput" type="text" placeholder="Ej. Guns N' Roses">
             </div>
+            <div class="album-side-remember-row">
+                <input type="checkbox" id="promptRememberAlbumForSearchCheckbox" checked>
+                <label for="promptRememberAlbumForSearchCheckbox">
+                    Guardar todas las canciones de <strong>esta búsqueda</strong> en este álbum
+                </label>
+            </div>
             <div class="album-side-buttons">
                 <button id="btnPromptConfirmAlbum" class="btn-primary album-btn-action" type="button">
                     &#x2714; Guardar en este álbum
@@ -365,7 +387,7 @@
         </div>
     </aside>
 
-    <!-- Panel Lateral de Duplicados: POSICIÓN FIJA a la derecha (Recuadro rojo) [v1.9.10] -->
+    <!-- Panel Lateral de Duplicados: POSICIÓN FIJA a la derecha (Recuadro rojo) [v1.9.11] -->
     <aside id="similarityInlineCard" class="similarity-side-panel hide">
         <div class="similarity-side-header">
             <div class="similarity-side-title">
@@ -420,7 +442,7 @@
 
 
 
-    <!-- Scripts de Supabase y Utilidades Compartidas del Chat con cache-busting v1.9.10 -->
+    <!-- Scripts de Supabase y Utilidades Compartidas del Chat con cache-busting v1.9.11 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="/js/config.js?v=1.9.9"></script>
     <script src="/js/media-api.js?v=1.9.9"></script>

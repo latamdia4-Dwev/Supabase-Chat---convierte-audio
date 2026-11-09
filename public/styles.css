@@ -1584,3 +1584,104 @@ button:disabled {
         animation: sidePanelSlideUp 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
 }
+
+
+/* ==========================================================================
+   MEJORAS v1.9.11: Acciones rápidas de búsqueda y álbum por búsqueda
+   ========================================================================== */
+
+.search-quick-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.search-quick-btns {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-subtle-action {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid var(--border-color);
+    color: #cbd5e1;
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    user-select: none;
+}
+
+.btn-subtle-action:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.search-album-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(2, 132, 199, 0.18);
+    border: 1px solid rgba(2, 132, 199, 0.45);
+    color: #38bdf8;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+
+.btn-badge-reset {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 0.82rem;
+    line-height: 1;
+    padding: 1px 3px;
+    border-radius: 3px;
+    transition: var(--transition);
+}
+
+.btn-badge-reset:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.2);
+}
+
+.album-side-remember-row {
+    margin-top: 10px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(2, 132, 199, 0.12);
+    border: 1px solid rgba(2, 132, 199, 0.35);
+    padding: 8px 10px;
+    border-radius: 8px;
+}
+
+.album-side-remember-row input[type="checkbox"] {
+    accent-color: #0284c7;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.album-side-remember-row label {
+    font-size: 0.75rem;
+    color: #bae6fd;
+    cursor: pointer;
+    user-select: none;
+    line-height: 1.35;
+    margin: 0;
+}
