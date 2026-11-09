@@ -2,7 +2,7 @@
  * ============================================================================
  * Proyecto: Conversor de YouTube a MP3 y Uploader para Supabase Chat
  * Archivo: public/app.js
- * Versión: 1.9.4
+ * Versión: 1.9.6
  * Descripción: Lógica del cliente enfocada y optimizada para YouTube:
  *              - Resaltado visual interactivo y badge animado en la canción de YouTube en reproducción
  *              - Tarjeta inline inamovible de comparación de duplicados
@@ -461,6 +461,8 @@ function showQueuePanel() {
 }
 
 function closeAlbumPrompt() {
+    const panel = $('albumPromptSidePanel');
+    if (panel) panel.classList.add('hide');
     const modal = $('albumPromptModal');
     if (modal) modal.classList.add('hide');
 }
@@ -986,38 +988,31 @@ async function searchYouTube() {
                 $('videoMetaDetails').textContent = `${item.uploader} • Duración: ${item.durationString}`;
 
                 logEvent(`Seleccionado: "${fullTitleClean}" (Banda detectada: ${detectedBand || 'Ninguna'})`, 'info');
+
+                // Validación proactiva de duplicados al seleccionar [v1.9.6]
+                const match = findSimilarTrack(fullTitleClean);
+                if (match) {
+                    logEvent(`⚠️ Canción similar ya registrada en tu perfil: "${match.track.display_name}"`, 'warn');
+                    showSimilarityInlineCard(fullTitleClean, $('albumInput')?.value?.trim() || detectedBand, match.track, (finalTitle) => {
+                        $('customTitleInput').value = finalTitle;
+                    });
+                }
+
                 $('trackConfigSection').scrollIntoView({ behavior: 'smooth' });
                 updatePlayingPreviewHighlight();
             };
 
-            // 3. Botón Añadir a la Cola: pregunta álbum/banda y encola [v1.9.2]
+            // 3. Botón Añadir a la Cola: valida duplicados, confirma álbum/banda y encola [v1.9.6]
             const queueBtn = document.createElement('button');
             queueBtn.type = 'button';
             queueBtn.className = 'search-btn-queue';
             queueBtn.innerHTML = '+ Cola';
             queueBtn.title = 'Añadir a la cola de descargas';
             queueBtn.onclick = async () => {
-                closeSimilarityNotification(); // Cierra duplicados anteriores
-                let chosenAlbum = $('albumInput')?.value?.trim() || null;
-
-                if (!chosenAlbum && detectedBand) {
-                    const ans = await promptAlbumConfirmation(detectedBand, fullTitleClean);
-                    if (ans === '__CANCELLED__') return;
-                    chosenAlbum = ans;
-                    if (chosenAlbum) $('albumInput').value = chosenAlbum;
-                }
-
-                addToDownloadQueue({
-                    url: item.url,
-                    title: fullTitleClean,
-                    cleanTitle: fullTitleClean,
-                    album: chosenAlbum,
-                    thumbnail: item.thumbnail,
-                    durationString: item.durationString
-                });
+                await processTrackSelection({ item, fullTitleClean, detectedBand });
             };
 
-            // 4. Botón Convertir: confirma álbum y encola directamente [v1.9.2]
+            // 4. Botón Convertir: valida duplicados, confirma álbum y encola directamente [v1.9.6]
             const convertDirectBtn = document.createElement('button');
             convertDirectBtn.type = 'button';
             convertDirectBtn.className = 'search-btn-select';
@@ -1026,24 +1021,7 @@ async function searchYouTube() {
             convertDirectBtn.innerHTML = '⚡ Convertir';
             convertDirectBtn.title = 'Convertir y subir a tu perfil';
             convertDirectBtn.onclick = async () => {
-                closeSimilarityNotification(); // Cierra duplicados anteriores
-                let chosenAlbum = $('albumInput')?.value?.trim() || null;
-
-                if (!chosenAlbum && detectedBand) {
-                    const ans = await promptAlbumConfirmation(detectedBand, fullTitleClean);
-                    if (ans === '__CANCELLED__') return;
-                    chosenAlbum = ans;
-                    if (chosenAlbum) $('albumInput').value = chosenAlbum;
-                }
-
-                addToDownloadQueue({
-                    url: item.url,
-                    title: fullTitleClean,
-                    cleanTitle: fullTitleClean,
-                    album: chosenAlbum,
-                    thumbnail: item.thumbnail,
-                    durationString: item.durationString
-                });
+                await processTrackSelection({ item, fullTitleClean, detectedBand });
             };
 
             actions.appendChild(listenBtn);
@@ -1207,6 +1185,15 @@ function normalizeTitle(str) {
         .trim();
 }
 
+function extractTrackNameOnly(str) {
+    if (!str) return '';
+    const parts = str.split(/\s*[-–—:]\s*/);
+    if (parts.length >= 2) {
+        return parts.slice(1).join(' ').trim();
+    }
+    return str.trim();
+}
+
 function calculateSimilarity(a, b) {
     const normA = normalizeTitle(a);
     const normB = normalizeTitle(b);
@@ -1214,15 +1201,24 @@ function calculateSimilarity(a, b) {
     if (normA === normB) return 1.0;
     if (!normA || !normB) return 0.0;
 
-    // Solo si una es subcadena de la otra Y la longitud es al menos el 60%
+    // 1. Si una está contenida en la otra y tiene longitud significativa (>= 5 caracteres) [v1.9.6]
     if (normA.includes(normB) || normB.includes(normA)) {
         const shorter = Math.min(normA.length, normB.length);
         const longer = Math.max(normA.length, normB.length);
-        if (shorter / longer >= 0.60) {
-            return 0.85 + 0.15 * (shorter / longer);
+        if (shorter >= 5) {
+            return 0.88 + 0.12 * (shorter / longer);
         }
     }
 
+    // 2. Comparar también aislando solo el nombre de la pista (sin banda) [v1.9.6]
+    const trackA = normalizeTitle(extractTrackNameOnly(a));
+    const trackB = normalizeTitle(extractTrackNameOnly(b));
+    if (trackA && trackB && (trackA === trackB || trackA.includes(trackB) || trackB.includes(trackA))) {
+        const shorter = Math.min(trackA.length, trackB.length);
+        if (shorter >= 4) return 0.90;
+    }
+
+    // 3. Similitud por Bigramas Dice-Sorensen
     const getBigrams = s => {
         const set = new Set();
         for (let i = 0; i < s.length - 1; i++) set.add(s.substring(i, i + 2));
@@ -1283,6 +1279,21 @@ function showSimilarityInlineCard(newTitle, newAlbum, existingTrack, onConfirm) 
     const card = $('similarityInlineCard');
     if (!card) return;
 
+    // Reposicionamiento visible en el DOM [v1.9.6]
+    // Si la cuadrícula de búsqueda está activa, mover la tarjeta arriba de los resultados
+    const searchGrid = $('searchResultsGrid');
+    if (searchGrid && !searchGrid.classList.contains('hide')) {
+        searchGrid.parentNode.insertBefore(card, searchGrid);
+    } else {
+        const trackSec = $('trackConfigSection');
+        if (trackSec) {
+            const convertBtnWrap = $('btnConvertAndUpload')?.parentElement;
+            if (convertBtnWrap) {
+                trackSec.insertBefore(card, convertBtnWrap);
+            }
+        }
+    }
+
     $('inlineNewTitle').textContent = newTitle;
     $('inlineNewAlbum').textContent = newAlbum || 'Sin álbum';
 
@@ -1341,10 +1352,7 @@ function showSimilarityInlineCard(newTitle, newAlbum, existingTrack, onConfirm) 
 
         try {
             await onConfirm(titleToUpload);
-            $('inlineLoadingText').textContent = '✔ ¡Canción agregada con éxito a tu perfil!';
-            setTimeout(() => {
-                closeSimilarityNotification();
-            }, 1500);
+            closeSimilarityNotification();
         } catch (uploadErr) {
             if (actionsRow) actionsRow.classList.remove('hide');
             const is500Mb = uploadErr.message && uploadErr.message.includes('500 MB');

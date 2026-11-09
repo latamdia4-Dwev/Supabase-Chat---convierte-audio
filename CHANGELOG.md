@@ -4,6 +4,30 @@ Todas las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [v1.9.6] — 2026-11-08
+
+### 🔍 Validación Proactiva de Duplicados en Búsqueda y Algoritmo de Similitud Mejorado
+
+#### 1. Detección Proactiva de Duplicados en Búsqueda de YouTube
+- **Problema corregido**: Al pulsar `+ Cola` o `⚡ Convertir` directamente en los resultados de búsqueda de YouTube, la aplicación encolaba la pista sin consultar si ya existía en el perfil del usuario.
+- **Solución integral**: Se implementó `processTrackSelection()` que valida preventivamente la canción contra la caché del perfil (`myTracksCache`) antes de pedir el álbum o encolar.
+- Si se detecta una canción similar o idéntica, se despliega de inmediato la tarjeta inline de advertencia (`#similarityInlineCard`) permitiendo:
+  - Comparar visualmente ambas pistas.
+  - Escuchar la pista existente con un clic.
+  - Subir de todos modos.
+  - Cambiar de nombre in-situ y continuar.
+  - Cancelar la subida sin encolar.
+
+#### 2. Algoritmo de Similitud Resiliente a Prefijos de Artista / Banda
+- **Corrección de falsos negativos**: Antes, títulos como "Green A - Carta a dios" comparados contra "Carta a dios" o "Guns N' Roses - Don't Cry" contra "Don't Cry" daban un score inferior a 0.72 debido a la penalización por longitud estricta (regla del 60%).
+- **Mejora**: Se incorporó `extractTrackNameOnly()` y comparación de subcadena significativa (longitud >= 5 caracteres) que otorga un score mínimo de 0.88 cuando el título de la canción está completamente contenido en el resultado de búsqueda.
+
+#### 3. Reposicionamiento Dinámico y Cierre Inmediato de la Tarjeta Inline
+- Si la cuadrícula de búsqueda está activa, la tarjeta `#similarityInlineCard` se inserta en el DOM **justo encima de los resultados de búsqueda**, evitando que el usuario tenga que desplazarse hacia el final de la página.
+- Al confirmar ("Subir de todos modos" o "Cambiar Nombre"), la tarjeta se cierra inmediatamente para dar paso fluido al panel lateral de álbum o a la cola de descargas.
+
+---
+
 ## [v1.9.4] — 2026-11-08
 
 ### Panel Lateral Inamovible de Album en el DOM + Estilos Completos
