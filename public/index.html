@@ -97,46 +97,8 @@
                     <span style="font-size: 0.78rem; color: #888;">💡 Puedes presionar "▶ Probar" para escuchar antes de convertir</span>
                 </div>
 
-                <!-- Cuadrícula de Resultados de Búsqueda -->
-                <!-- Contenedor Flex de Búsqueda y Panel Lateral de Álbum en el DOM [v1.9.4] -->
-                <div class="search-layout-row" id="searchLayoutRow">
-                    <div id="searchResultsGrid" class="search-results-grid hide"></div>
-
-                    <!-- Panel Lateral Inamovible de Álbum / Banda en el DOM (Sin modales ni overlays) -->
-                    <aside id="albumPromptSidePanel" class="album-side-panel hide">
-                        <div class="album-side-header">
-                            <div class="album-side-title">
-                                <span>💿</span>
-                                <span>Organizar en Álbum</span>
-                            </div>
-                            <button id="btnCloseAlbumSidePanel" class="btn-side-close" type="button" title="Cerrar panel lateral">✕</button>
-                        </div>
-                        <div class="album-side-body">
-                            <div class="album-side-section">
-                                <span class="album-side-badge">Banda / Artista detectado:</span>
-                                <div class="album-side-artist" id="promptArtistNameText">Artista</div>
-                                <div class="album-side-song" id="promptSongNameText">Título</div>
-                            </div>
-
-                            <div class="album-side-field">
-                                <label for="promptAlbumInput">Nombre de la banda o álbum:</label>
-                                <input id="promptAlbumInput" type="text" placeholder="Ej. Guns N' Roses">
-                            </div>
-
-                            <div class="album-side-buttons">
-                                <button id="btnPromptConfirmAlbum" class="btn-primary album-btn-action" type="button">
-                                    ✔ Guardar en este álbum
-                                </button>
-                                <button id="btnPromptNoAlbum" class="btn-secondary album-btn-action" type="button">
-                                    📁 Sin categoría (Sin álbum)
-                                </button>
-                            </div>
-                            <small style="color: var(--text-muted); font-size: 0.74rem; display: block; margin-top: 10px; text-align: center;">
-                                💡 Se agregará a tu cola con el álbum seleccionado.
-                            </small>
-                        </div>
-                    </aside>
-                </div>
+                <!-- Cuadrícula de Resultados de Búsqueda [v1.9.4b] -->
+                <div id="searchResultsGrid" class="search-results-grid hide"></div>
             </div>
 
             <!-- VISTA 2: Enlace Directo o Playlist -->
@@ -418,6 +380,40 @@
             </div>
         </div>
     </div>
+
+    <!-- Panel Lateral de Album: POSICION FIJA en el espacio derecho del viewport [v1.9.4b] -->
+    <aside id="albumPromptSidePanel" class="album-side-panel hide">
+        <div class="album-side-header">
+            <div class="album-side-title">
+                <span>&#x1F4BF;</span>
+                <span>Organizar en Álbum</span>
+            </div>
+            <button id="btnCloseAlbumSidePanel" class="btn-side-close" type="button" title="Cerrar panel lateral">&#x2715;</button>
+        </div>
+        <div class="album-side-body">
+            <div class="album-side-section">
+                <span class="album-side-badge">Banda / Artista detectado:</span>
+                <div class="album-side-artist" id="promptArtistNameText">Artista</div>
+                <div class="album-side-song" id="promptSongNameText">Título</div>
+            </div>
+            <div class="album-side-field">
+                <label for="promptAlbumInput">Nombre de la banda o álbum:</label>
+                <input id="promptAlbumInput" type="text" placeholder="Ej. Guns N' Roses">
+            </div>
+            <div class="album-side-buttons">
+                <button id="btnPromptConfirmAlbum" class="btn-primary album-btn-action" type="button">
+                    &#x2714; Guardar en este álbum
+                </button>
+                <button id="btnPromptNoAlbum" class="btn-secondary album-btn-action" type="button">
+                    &#x1F4C1; Sin categoría (Sin álbum)
+                </button>
+            </div>
+            <small style="color: var(--text-muted); font-size: 0.74rem; display: block; margin-top: 10px; text-align: center;">
+                &#x1F4A1; Se agregará a tu cola con el álbum seleccionado.
+            </small>
+        </div>
+    </aside>
+
 
     <!-- Scripts de Supabase y Utilidades Compartidas del Chat con cache-busting v1.9.4 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

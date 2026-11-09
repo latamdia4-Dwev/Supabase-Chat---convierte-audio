@@ -789,13 +789,8 @@ function promptAlbumConfirmation(suggestedArtist, songTitle = '') {
         if (songText)   songText.textContent   = songTitle || '';
         if (albumInput) albumInput.value        = suggestedArtist;
 
-        // Mostrar el panel y la fila de búsqueda
+        // Mostrar el panel (position: fixed, no necesita scrollIntoView) [v1.9.4b]
         panel.classList.remove('hide');
-        const layoutRow = $('searchLayoutRow');
-        if (layoutRow) layoutRow.classList.add('panel-active');
-
-        // Desplazar suavemente hasta el panel
-        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
         let isResolved = false;
 
@@ -806,7 +801,6 @@ function promptAlbumConfirmation(suggestedArtist, songTitle = '') {
 
             // Ocultar panel
             panel.classList.add('hide');
-            if (layoutRow) layoutRow.classList.remove('panel-active');
 
             // Desconectar listeners para evitar fugas de memoria
             if (btnConfirm) btnConfirm.onclick = null;

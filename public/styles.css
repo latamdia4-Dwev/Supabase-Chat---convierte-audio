@@ -1261,39 +1261,34 @@ button:disabled {
 
 
 /* ══════════════════════════════════════════════════════════════════════
-   PANEL LATERAL DE ÁLBUM EN EL DOM (Inamovible, al lado de búsqueda) [v1.9.4]
+   PANEL LATERAL DE ÁLBUM: POSITION FIXED en el espacio derecho del viewport [v1.9.4b]
+   Se posiciona fuera del .container (max-width 740px centrado) en el margen derecho
    ══════════════════════════════════════════════════════════════════════ */
 
-/* Fila flex que contiene la cuadrícula de resultados + panel lateral de álbum */
-.search-layout-row {
-    display: flex;
-    flex-direction: row;
-    gap: 16px;
-    align-items: flex-start;
+/* La grilla de resultados sigue ocupando su ancho normal sin verse afectada */
+.search-results-grid {
     width: 100%;
 }
 
-/* La grilla de resultados ocupa todo el espacio disponible */
-.search-layout-row .search-results-grid {
-    flex: 1 1 0%;
-    min-width: 0;
-}
-
-/* Panel lateral de álbum: fijo a la derecha de la búsqueda */
+/* Panel lateral: FIJO al lado derecho del viewport, fuera del flujo del documento */
 .album-side-panel {
-    flex: 0 0 300px;
-    width: 300px;
-    max-width: 300px;
+    position: fixed;
+    /* Calculamos: 50vw + mitad del container (370px) + gap de 20px */
+    left: calc(50% + 390px);
+    top: 50%;
+    transform: translateY(-50%);
+    width: 280px;
+    max-width: calc(50vw - 410px); /* Respeta el borde del viewport */
+    min-width: 220px;
     background: #0f1623;
     border: 1.5px solid #0284c7;
     border-radius: 14px;
     overflow: hidden;
-    box-shadow: 0 4px 32px rgba(2, 132, 199, 0.18);
-    position: sticky;
-    top: 20px;
+    box-shadow: 0 4px 40px rgba(2, 132, 199, 0.22);
+    z-index: 900;
     display: flex;
     flex-direction: column;
-    animation: sidePanelSlideIn 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: sidePanelSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes sidePanelSlideIn {
@@ -1433,15 +1428,22 @@ button:disabled {
     border-radius: 9px;
 }
 
-/* En pantallas < 900px: colapsa a columna vertical */
+/* En pantallas < 900px: colapsa el panel al fondo como overlay deslizable */
 @media (max-width: 900px) {
-    .search-layout-row {
-        flex-direction: column;
-    }
     .album-side-panel {
-        flex: 0 0 auto;
-        width: 100%;
-        max-width: 100%;
-        position: static;
+        position: fixed;
+        left: 50%;
+        top: auto;
+        bottom: 0;
+        transform: translateX(-50%);
+        width: 95vw;
+        max-width: 480px;
+        border-radius: 14px 14px 0 0;
+        animation: sidePanelSlideUp 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
+}
+
+@keyframes sidePanelSlideUp {
+    from { opacity: 0; transform: translateX(-50%) translateY(40px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
