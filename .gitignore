@@ -5,7 +5,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Carpeta de respaldo del chat antiguo (separada según requerimiento)
+# Carpeta de respaldo del chat antiguo
 chat_backup/
 
 # Archivos temporales de audio convertidos de YouTube
@@ -13,9 +13,23 @@ temp_audio/
 *.tmp
 *.mp3
 
-# Variables de entorno locales
+# Variables de entorno locales y credenciales (NUNCA SUBIR A GIT)
 .env
-.env.local
+.env.*
+.env*.local
+!.env.example
+
+# Cookies y credenciales de YouTube (NUNCA SUBIR A GIT)
+cookies.txt
+cookies_test/
+*cookie*.txt
+*cookies*
+
+# Respaldos, paquetes comprimidos y scratch
+*.zip
+*.tar.gz
+*.rar
+scratch/
 
 # Archivos del sistema operativo
 .DS_Store
