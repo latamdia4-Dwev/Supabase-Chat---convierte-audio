@@ -1,0 +1,17 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.elgatobypasses.org	TRUE	/	TRUE	1828820305	PREF@youtube.com	f6=40000000&tz=America.Mexico_City
+.elgatobypasses.org	TRUE	/	TRUE	0	__-YENID@youtube.com	CvoBCAYSrAEBWybZ6H7zolfF9CaaRP9MGDHtIFRiW3r301Pi_bZOiEI27yTNs8UaYZlfeoe6qkVLxonDjUEH4a5UZZFWY7LHBD3AQLkE-BqWxxlhZe9D04T0Iz5kXwbiogODVU7YjROEc19XVTdnu1wG7f1UoSqhNSF3WEppSACqqCBRwk7xWvZJ8zHlmgreU4BWd3ZzXgAkWcxeed_HUVafSHq6iHQWmBO1JulaH-grxNC5KAYyRQGyaJ9lSSTwzTn_AWkwMkF1ZV3V4Y9duGHqvg31M2D4GsMEeeItiYH6mPHwSkApz43kCpkQX1w5Hew5snCliod1aDLFBA
+.elgatobypasses.org	TRUE	/	TRUE	0	SOCS@youtube.com	CAISFAgDEgoxMDE3MDE5MzMzGgJlcyABGgYIgJrE1wY
+.elgatobypasses.org	TRUE	/	TRUE	1794262109	GPS@youtube.com	1
+.elgatobypasses.org	TRUE	/	TRUE	0	__cpc	YS9TWjB0Qkw2YnQxYWdXVVhNZlJCdmFEOTVvQUJvbzRmZXpnQmxvY3Y3RUF4WUtWYmFuZEk0WmZWV0h6NlgrZ3Q4aHNJNTRNVUdiZTFIcncwbnhHTFVRbWEvS1BHSEZNZXBweW5SZExFUlNiYkNhVEgwdDM1MURldk1jVVUwa2o5d0JWSDRsR2VjYk1aN0pPNmw2VFBVYmprWVZlZ2R5WFN1U2wxLzJxSDF4SU5mNjdEK2tmZlQrRjVJWjhUZ2dubjhnRHFPMGV0djY2Nk5KbmhuUy9XZTBSejFGbGhKUC8zeFRidFZvTUFyMUU3OGlsa1NGdk5iK0Zvd3Z4azFmT1pyNTZ0UjMzaE0ydUxYcGVva2N2WndYdWVPYjhaNTIwVEJueWZxbnZNQzlHWWxkMVZ6b3gvZE95VklMd3FGYzBxQjF2ZFJucElhTVVZZmxaMTZMVmJxOG1DTXJmSTN4Q2RrRFpqWGo1QmdzPQ%3D%3D
+.elgatobypasses.org	TRUE	/	TRUE	1794260450	__cpcPopShown	1
+.elgatobypasses.org	TRUE	/	TRUE	0	YSC@youtube.com	HBlTzilvXRc
+.elgatobypasses.org	TRUE	/	TRUE	1794281896	__cpcStatSampleNum	2
+.elgatobypasses.org	TRUE	/	TRUE	1796679506	__cpcTermsAccepted	1
+.elgatobypasses.org	TRUE	/	TRUE	0	__-YNID@youtube.com	CvsBCAUSrQEBDB6PDNzBgaCLUhbIiZ46CS0-yLBqcOioVjJhmCK-dR-gNFBr6PW3yJiMn0uIav9JTxCM1SQh6ipchjmeixU39bSSs4W9NAl470M0E5J5caFKssxI4PXKTUQIQSDKHn-bMt90JILaJhV74Kqr2t4ZiKPJcGPgf6ZNyhLhfjIUREjAn_dBVplWXTkpMta-LQk34w7gp9Bnf7G4dlmp38Qm4yCost49NkGPWHs5UygFMkUBHFj1agJlnf0Ei2Omra1BPdfmosonIFxaQAVLLhJKEqXG8z1nSgvmsbY5aT3gO7sRPY-_eL6hpRkFLm2e9uMPgdpn5QU
+.elgatobypasses.org	TRUE	/	TRUE	0	VISITOR_INFO1_LIVE@youtube.com	JgLykCTxBm8
+.elgatobypasses.org	TRUE	/	TRUE	0	VISITOR_PRIVACY_METADATA@youtube.com	CgJQTBIiEh4SHAsMDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicgWg%3D%3D
+.elgatobypasses.org	TRUE	/	TRUE	0	__-ROLLOUT_TOKEN@youtube.com	CK-Cs7bj-7HM2wEQta_Fwuz7lwMYta_Fwuz7lwM%3D

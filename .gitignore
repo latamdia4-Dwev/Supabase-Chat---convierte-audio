@@ -20,10 +20,7 @@ temp_audio/
 !.env.example
 
 # Cookies y credenciales de YouTube (NUNCA SUBIR A GIT)
-cookies.txt
-cookies_test/
-*cookie*.txt
-*cookies*
+
 
 # Respaldos, paquetes comprimidos y scratch
 *.zip
