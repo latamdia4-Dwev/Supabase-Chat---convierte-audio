@@ -2168,3 +2168,121 @@ function initSearchHelpers() {
         };
     }
 }
+
+
+// ============================================================================
+// ALERTA DE PRUEBA DE COOKIES DE YOUTUBE [v1.9.13]
+// Muestra qué cookies funcionaron y cuáles fallaron (y por qué).
+// ============================================================================
+(function initCookieTestAlert() {
+    let pollTimer = null;
+    let shownFor = null;
+
+    function ensureBox() {
+        let box = document.getElementById('cookie-test-alert');
+        if (box) return box;
+        box = document.createElement('div');
+        box.id = 'cookie-test-alert';
+        box.style.cssText = 'position:fixed;top:12px;right:12px;z-index:99999;max-width:440px;width:calc(100% - 24px);' +
+            'background:#14141c;color:#eee;border:1px solid #3a3a4d;border-radius:12px;padding:14px 16px;' +
+            'font:13px/1.45 system-ui,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.5);';
+        document.body.appendChild(box);
+        return box;
+    }
+
+    function el(tag, text, css) {
+        const n = document.createElement(tag);
+        if (text != null) n.textContent = text;
+        if (css) n.style.cssText = css;
+        return n;
+    }
+
+    function render(state) {
+        const box = ensureBox();
+        box.textContent = '';
+
+        const head = el('div', null, 'display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;');
+        head.appendChild(el('strong', state.running ? '⏳ Probando cookies de YouTube…' : '🍪 Prueba de cookies de YouTube', 'font-size:14px;'));
+        const close = el('button', '✕', 'background:none;border:none;color:#aaa;font-size:16px;cursor:pointer;');
+        close.onclick = () => box.remove();
+        head.appendChild(close);
+        box.appendChild(head);
+
+        if (state.running) {
+            box.appendChild(el('div', 'Esto puede tardar un par de minutos. No cierres el servidor.', 'color:#bbb;'));
+            return;
+        }
+
+        const anyOk = (state.cookies || []).some(c => c.ok);
+        box.style.borderColor = anyOk ? '#2e7d4f' : '#a33a3a';
+
+        (state.cookies || []).forEach(c => {
+            const row = el('div', null, 'margin:6px 0;');
+            row.appendChild(el('div', (c.ok ? '✅ ' : '❌ ') + c.name + (c.converted ? ' (convertida a youtube.com)' : ''),
+                'font-weight:600;color:' + (c.ok ? '#6fdc8c' : '#ff8a8a') + ';'));
+            const detail = (c.attempts || []).map(a => `${a.via}: ${a.ok ? 'OK' : (a.error || 'falló')}`).join(' · ');
+            row.appendChild(el('div', detail, 'color:#aaa;font-size:12px;'));
+            box.appendChild(row);
+        });
+
+        if (!(state.cookies || []).length) {
+            box.appendChild(el('div', state.summary || 'No hay cookies para probar.', 'color:#ccc;'));
+        }
+
+        if (state.winner) {
+            box.appendChild(el('div', `Cookie activada: ${state.winner.name} (${state.winner.via})`,
+                'margin-top:8px;padding:6px 8px;background:#1d3a2a;border-radius:8px;color:#9bf0b5;'));
+        } else if ((state.cookies || []).length) {
+            const baseOk = (state.baseline || []).some(b => b.ok);
+            box.appendChild(el('div', baseOk
+                ? 'Sin cookies sí conecta: el problema son las cookies, no la IP.'
+                : 'Tampoco conecta sin cookies: el bloqueo es de la IP/proxy.',
+                'margin-top:8px;padding:6px 8px;background:#3a1d1d;border-radius:8px;color:#ffb3b3;'));
+        }
+
+        const retry = el('button', 'Volver a probar', 'margin-top:10px;padding:6px 12px;border-radius:8px;border:1px solid #555;background:#23232f;color:#eee;cursor:pointer;');
+        retry.onclick = async () => {
+            try {
+                const r = await fetch('/api/cookies/test', { method: 'POST' });
+                const data = await r.json();
+                if (r.status === 429) { alert(data.error); return; }
+                render(data);
+                startPolling();
+            } catch (e) { alert('No se pudo iniciar la prueba: ' + e.message); }
+        };
+        box.appendChild(retry);
+    }
+
+    async function fetchStatus() {
+        try {
+            const r = await fetch('/api/cookies/status');
+            if (!r.ok) return null;
+            return await r.json();
+        } catch (e) { return null; }
+    }
+
+    function startPolling() {
+        if (pollTimer) return;
+        pollTimer = setInterval(async () => {
+            const st = await fetchStatus();
+            if (!st) return;
+            if (st.running) { render(st); return; }
+            if (!st.finishedAt) return; // la prueba automática aún no arranca
+            clearInterval(pollTimer);
+            pollTimer = null;
+            shownFor = st.finishedAt;
+            render(st);
+        }, 4000);
+    }
+
+    async function boot() {
+        const st = await fetchStatus();
+        if (!st) return;
+        if (st.running) { render(st); startPolling(); return; }
+        if (st.finishedAt && st.finishedAt !== shownFor) { shownFor = st.finishedAt; render(st); return; }
+        if (!st.finishedAt) startPolling(); // aún no arranca la prueba automática: esperar
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
+})();

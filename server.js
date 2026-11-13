@@ -133,6 +133,239 @@ function formatDuration(seconds) {
 const COOKIES_FILE = path.join(ROOT_DIR, 'cookies.txt');
 const TEMP_COOKIES_FILE = path.join(TEMP_DIR, 'yt_cookies.txt');
 
+// ─── Probador automático de cookies [v1.9.13] ───
+// Prueba cada archivo de cookies (cookies_test/*.txt + cookies.txt) contra YouTube con yt-dlp,
+// reporta cuál funcionó y cuál falló (y por qué), y activa automáticamente la primera que sirva.
+const COOKIE_CANDIDATES_DIR = path.join(ROOT_DIR, 'cookies_test');
+const ACTIVE_COOKIES_FILE = path.join(TEMP_DIR, 'yt_cookies_active.txt');
+const COOKIE_TEST_VIDEO_ID = 'jNQXAC9IVRw'; // "Me at the zoo": video público y estable
+const COOKIE_TEST_TIMEOUT_MS = 30000;
+let proxyMarkedDead = false;
+
+const cookieTestState = {
+    running: false,
+    startedAt: null,
+    finishedAt: null,
+    proxyConfigured: false,
+    cookies: [],      // [{ name, ok, converted, attempts: [{ via, ok, ms, error }] }]
+    baseline: [],     // pruebas SIN cookies para distinguir "IP bloqueada" de "cookie mala"
+    winner: null,     // { name, via }
+    summary: ''
+};
+
+/** Devuelve el proxy configurado (o null). Con ignoreDead=true ignora la marca de "proxy caído". */
+function getConfiguredProxy(ignoreDead = false) {
+    if (proxyMarkedDead && !ignoreDead) return null;
+    const p = process.env.YOUTUBE_PROXY || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+    return p && p.trim() ? p.trim() : null;
+}
+
+/**
+ * Normaliza un archivo Netscape. Si viene de un web-proxy (ej. elgatobypasses.org) con cookies
+ * de dominio ajeno y nombres tipo "PREF@youtube.com" / "__-YNID@youtube.com", las convierte a
+ * dominio .youtube.com y restaura el prefijo __Secure-.
+ */
+function normalizeCookieContent(raw) {
+    const out = ['# Netscape HTTP Cookie File'];
+    let converted = false;
+    let kept = 0;
+    for (const line of String(raw).replace(/\r/g, '').split('\n')) {
+        if (!line.trim()) continue;
+        if (line.startsWith('#') && !line.startsWith('#HttpOnly_')) continue;
+        const p = line.split('\t');
+        if (p.length !== 7) continue;
+        let [domain, sub, cpath, secure, exp, name, value] = p;
+        if (!/youtube\.com$/i.test(domain)) {
+            if (!name.endsWith('@youtube.com')) continue; // cookies propias del web-proxy: se descartan
+            domain = '.youtube.com';
+            name = name.slice(0, -'@youtube.com'.length).replace(/^__-/, '__Secure-');
+            converted = true;
+        }
+        out.push([domain, sub, cpath, secure, exp, name, value].join('\t'));
+        kept++;
+    }
+    return { content: out.join('\n') + '\n', kept, converted };
+}
+
+/** Traduce errores crudos de yt-dlp a una causa corta y legible. */
+function classifyYtError(msg) {
+    const m = String(msg || '');
+    if (/cookies/i.test(m) && /no longer valid|rotated/i.test(m)) return 'YouTube invalidó/rotó estas cookies';
+    if (/Sign in to confirm|not a bot/i.test(m)) return 'YouTube pidió verificación anti-bot (IP o sesión marcada)';
+    if (/HTTP Error 429|Too Many Requests/i.test(m)) return 'YouTube limitó la IP (HTTP 429)';
+    if (/ENOENT/i.test(m)) return 'No se encontró yt-dlp en la carpeta bin/';
+    if (/timeout|timed out|ETIMEDOUT|ECONNREFUSED|ECONNRESET|Unable to connect|Tunnel connection failed|Proxy/i.test(m)) {
+        return 'Sin respuesta de la conexión (timeout / proxy caído)';
+    }
+    const errLine = m.split('\n').reverse().find(l => /ERROR/i.test(l)) || m.split('\n')[0] || 'Error desconocido';
+    return errLine.replace(/^.*ERROR:\s*/i, '').slice(0, 160);
+}
+
+/** Ejecuta un proceso con tiempo límite duro (mata el proceso si se cuelga). */
+function runProcessTimeout(cmdPath, args, ms) {
+    return new Promise((resolve, reject) => {
+        const proc = spawn(cmdPath, args, { windowsHide: true });
+        let stdout = '';
+        let stderr = '';
+        let timedOut = false;
+        const timer = setTimeout(() => { timedOut = true; proc.kill('SIGKILL'); }, ms);
+        proc.stdout.on('data', d => { stdout += d.toString(); });
+        proc.stderr.on('data', d => { stderr += d.toString(); });
+        proc.on('close', code => {
+            clearTimeout(timer);
+            if (timedOut) return reject(new Error(`timeout tras ${Math.round(ms / 1000)}s`));
+            if (code === 0) return resolve({ stdout, stderr });
+            reject(new Error(`código ${code}: ${stderr || stdout}`));
+        });
+        proc.on('error', err => { clearTimeout(timer); reject(err); });
+    });
+}
+
+/** Un intento: extrae info del video de prueba con (o sin) cookies, por proxy o directo. */
+async function testCookieAttempt(cookiePath, proxy) {
+    const args = [
+        '--no-check-certificates',
+        '--socket-timeout', '10',
+        '--js-runtimes', 'node',
+        '--extractor-args', 'youtube:player_client=mweb,web',
+        '--skip-download', '--no-playlist', '--no-warnings',
+        '--print', '%(id)s'
+    ];
+    if (cookiePath) args.push('--cookies', cookiePath);
+    if (proxy) args.push('--proxy', proxy);
+    args.push(`https://www.youtube.com/watch?v=${COOKIE_TEST_VIDEO_ID}`);
+
+    const t0 = Date.now();
+    try {
+        const { stdout } = await runProcessTimeout(YTDLP_BIN, args, COOKIE_TEST_TIMEOUT_MS);
+        const ok = stdout.includes(COOKIE_TEST_VIDEO_ID);
+        return { ok, ms: Date.now() - t0, error: ok ? null : 'yt-dlp no devolvió datos del video' };
+    } catch (e) {
+        return { ok: false, ms: Date.now() - t0, error: classifyYtError(e.message) };
+    }
+}
+
+/** Lista los archivos candidatos: cookies_test/*.txt, Secret Files de Render (/etc/secrets) y el cookies.txt de la raíz. */
+function listCookieCandidates() {
+    const list = [];
+    const seen = new Set();
+    const addDir = (dir, filter, prefix) => {
+        try {
+            for (const f of fs.readdirSync(dir).sort()) {
+                if (!/\.txt$/i.test(f) || !filter(f) || seen.has(f)) continue;
+                const full = path.join(dir, f);
+                if (!fs.statSync(full).isFile()) continue;
+                seen.add(f);
+                list.push({ name: prefix + f, file: full });
+            }
+        } catch (e) { /* carpeta inexistente: se ignora */ }
+    };
+    addDir(COOKIE_CANDIDATES_DIR, () => true, '');
+    addDir('/etc/secrets', f => /cookie/i.test(f), '[secret] '); // Render > Environment > Secret Files
+    if (fs.existsSync(COOKIES_FILE) && fs.statSync(COOKIES_FILE).size > 10) {
+        list.push({ name: 'cookies.txt (actual)', file: COOKIES_FILE });
+    }
+    return list;
+}
+
+function buildCookieSummary(st) {
+    const okNames = st.cookies.filter(c => c.ok).map(c => c.name);
+    const bad = st.cookies.filter(c => !c.ok).map(c => {
+        const reasons = [...new Set(c.attempts.map(a => a.error).filter(Boolean))];
+        return `${c.name} (${reasons.join(' / ') || 'falló'})`;
+    });
+    const lines = [];
+    if (!st.cookies.length) return 'No hay archivos de cookies para probar (coloca .txt en cookies_test/).';
+    lines.push(okNames.length ? `FUNCIONÓ: ${okNames.join(', ')}` : 'NINGUNA cookie funcionó.');
+    if (bad.length) lines.push(`FALLÓ: ${bad.join('; ')}`);
+    const baseOk = st.baseline.filter(b => b.ok).map(b => b.via);
+    if (!okNames.length) {
+        lines.push(baseOk.length
+            ? `Sin cookies SÍ conecta (${baseOk.join(', ')}): el problema son las cookies, no la IP.`
+            : 'Tampoco conecta sin cookies: el bloqueo es de la IP/proxy, no de las cookies.');
+    }
+    return lines.join('\n');
+}
+
+async function runCookieTests() {
+    if (cookieTestState.running) return cookieTestState;
+
+    // Reiniciar estado y revertir activaciones anteriores
+    proxyMarkedDead = false;
+    try { fs.unlinkSync(ACTIVE_COOKIES_FILE); } catch (e) { /* no existía */ }
+    Object.assign(cookieTestState, {
+        running: true, startedAt: Date.now(), finishedAt: null,
+        cookies: [], baseline: [], winner: null, summary: '',
+        proxyConfigured: !!getConfiguredProxy(true)
+    });
+
+    try {
+        const rawProxy = getConfiguredProxy(true);
+        const connections = rawProxy
+            ? [{ via: 'proxy', proxy: rawProxy }, { via: 'directo', proxy: null }]
+            : [{ via: 'directo', proxy: null }];
+        const candidates = listCookieCandidates();
+        const prepared = [];
+
+        for (const [i, cand] of candidates.entries()) {
+            const norm = normalizeCookieContent(fs.readFileSync(cand.file, 'utf8'));
+            const tmp = path.join(TEMP_DIR, `cktest_${i}.txt`);
+            fs.writeFileSync(tmp, norm.content, 'utf8');
+            prepared.push({ ...cand, tmp, norm });
+            cookieTestState.cookies.push({ name: cand.name, ok: false, converted: norm.converted, cookiesCount: norm.kept, attempts: [] });
+        }
+
+        // Pruebas base SIN cookies (aíslan problemas de IP/proxy)
+        for (const conn of connections) {
+            const r = await testCookieAttempt(null, conn.proxy);
+            cookieTestState.baseline.push({ via: conn.via, ok: r.ok, ms: r.ms, error: r.error });
+            console.log(`[CookieTest] Sin cookies (${conn.via}): ${r.ok ? 'OK' : 'FALLÓ - ' + r.error}`);
+        }
+
+        // Pruebas con cada archivo de cookies
+        for (const [i, p] of prepared.entries()) {
+            const entry = cookieTestState.cookies[i];
+            for (const conn of connections) {
+                const r = await testCookieAttempt(p.tmp, conn.proxy);
+                entry.attempts.push({ via: conn.via, ok: r.ok, ms: r.ms, error: r.error });
+                if (r.ok) entry.ok = true;
+                console.log(`[CookieTest] ${p.name} (${conn.via}): ${r.ok ? 'OK' : 'FALLÓ - ' + r.error}`);
+            }
+            try { fs.unlinkSync(p.tmp); } catch (e) { /* ignorar */ }
+        }
+
+        // Si TODO lo que pasó por el proxy falló por conexión, marcarlo caído para no perder 10 s por intento
+        if (rawProxy) {
+            const viaProxy = [...cookieTestState.baseline, ...cookieTestState.cookies.flatMap(c => c.attempts)].filter(a => a.via === 'proxy');
+            if (viaProxy.length && viaProxy.every(a => !a.ok && /Sin respuesta/.test(a.error || ''))) {
+                proxyMarkedDead = true;
+                console.warn('[CookieTest] El proxy no responde: se omitirá hasta la próxima prueba.');
+            }
+        }
+
+        // Activar la primera cookie que funcionó (preferencia: la que pasa por el proxy configurado)
+        const rank = c => (c.attempts.find(a => a.ok && a.via === 'proxy') ? 0 : 1);
+        const winnerEntry = cookieTestState.cookies.filter(c => c.ok).sort((a, b) => rank(a) - rank(b))[0];
+        if (winnerEntry) {
+            const idx = cookieTestState.cookies.indexOf(winnerEntry);
+            fs.writeFileSync(ACTIVE_COOKIES_FILE, prepared[idx].norm.content, 'utf8');
+            const via = winnerEntry.attempts.filter(a => a.ok).map(a => a.via).join('+');
+            cookieTestState.winner = { name: winnerEntry.name, via };
+            console.log(`[CookieTest] Cookie activada: ${winnerEntry.name} (${via})`);
+        }
+
+        cookieTestState.summary = buildCookieSummary(cookieTestState);
+    } catch (e) {
+        cookieTestState.summary = `Error ejecutando la prueba de cookies: ${e.message}`;
+        console.error('[CookieTest]', e);
+    } finally {
+        cookieTestState.running = false;
+        cookieTestState.finishedAt = Date.now();
+        console.log('[CookieTest] Resultado:\n' + cookieTestState.summary);
+    }
+    return cookieTestState;
+}
+
 /**
  * Resuelve la ruta al archivo de cookies de YouTube si existe:
  * 1. Archivo físico cookies.txt en la raíz del proyecto
@@ -140,6 +373,9 @@ const TEMP_COOKIES_FILE = path.join(TEMP_DIR, 'yt_cookies.txt');
  * 3. Variable de entorno YOUTUBE_COOKIES_BASE64 (base64 sin saltos de línea rotos)
  */
 function resolveCookiesPath() {
+    if (fs.existsSync(ACTIVE_COOKIES_FILE) && fs.statSync(ACTIVE_COOKIES_FILE).size > 10) {
+        return ACTIVE_COOKIES_FILE;
+    }
     if (fs.existsSync(COOKIES_FILE) && fs.statSync(COOKIES_FILE).size > 10) {
         return COOKIES_FILE;
     }
@@ -202,7 +438,7 @@ function buildBaseYtDlpArgs(clientStrategy, extraArgs = [], useProxy = true, use
     }
 
     if (useProxy) {
-        const proxy = process.env.YOUTUBE_PROXY || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+        const proxy = getConfiguredProxy();
         if (proxy && proxy.trim()) {
             args.push('--proxy', proxy.trim());
         }
@@ -427,7 +663,7 @@ app.post('/api/convert-and-upload', async (req, res) => {
     const expectedMp3Path = path.join(TEMP_DIR, `${tempId}.mp3`);
 
     const hasCookies = !!resolveCookiesPath();
-    const hasProxy = !!(process.env.YOUTUBE_PROXY || process.env.HTTP_PROXY || process.env.HTTPS_PROXY);
+    const hasProxy = !!getConfiguredProxy();
 
     // Matriz de estrategias escalonadas [v1.9.12]:
     // 1. Con cookies y con proxy (si están configurados)
@@ -627,6 +863,42 @@ app.post('/api/convert-and-upload', async (req, res) => {
     }
 });
 
+// ─── Endpoints del probador de cookies [v1.9.13] ───
+function publicCookieState() {
+    const s = cookieTestState;
+    return {
+        running: s.running,
+        startedAt: s.startedAt,
+        finishedAt: s.finishedAt,
+        proxyConfigured: s.proxyConfigured,
+        winner: s.winner,
+        summary: s.summary,
+        baseline: s.baseline,
+        cookies: s.cookies.map(c => ({
+            name: c.name,
+            ok: c.ok,
+            converted: c.converted,
+            attempts: c.attempts
+        }))
+    };
+}
+
+app.get('/api/cookies/status', (req, res) => {
+    res.json(publicCookieState());
+});
+
+app.post('/api/cookies/test', (req, res) => {
+    if (cookieTestState.running) {
+        return res.status(202).json(publicCookieState());
+    }
+    // Anti-abuso: no relanzar si la última prueba terminó hace menos de 60 s
+    if (cookieTestState.finishedAt && Date.now() - cookieTestState.finishedAt < 60000) {
+        return res.status(429).json({ ...publicCookieState(), error: 'Espera un minuto antes de volver a probar las cookies.' });
+    }
+    runCookieTests().catch(e => console.error('[CookieTest]', e.message));
+    res.status(202).json(publicCookieState());
+});
+
 // Manejador global de 404 para responder siempre en JSON
 app.use((req, res) => {
     res.status(404).json({ error: `Ruta no encontrada: ${req.method} ${req.url}` });
@@ -645,6 +917,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(` Media API:  ${MEDIA_API_URL}`);
     console.log(` Cookies YT: ${cookiesResolved ? 'Detectadas y activas' : 'No configuradas (Modo visión bypass)'}`);
     console.log(`=======================================================`);
+    // Probar cookies automáticamente al arrancar [v1.9.13]
+    setTimeout(() => runCookieTests().catch(e => console.error('[CookieTest]', e.message)), 3000);
 });
 
 server.on('error', (err) => {
